@@ -16,9 +16,10 @@ use tracing::{info, warn, error, debug};
 const CELLANA_SWAP_EVENT_TYPE: &str = "0x4bf51972879e3b95c4781a5cdcb9e1ee24ef483e7d22f2d903626f126df62bd1::liquidity_pool::SwapEvent";
 const CELLANA_LIQUIDITY_POOL_TYPE: &str = "0x4bf51972879e3b95c4781a5cdcb9e1ee24ef483e7d22f2d903626f126df62bd1::liquidity_pool::LiquidityPool";
 
-// Track both APT/USDC and USDT/USDC pools
+// Track APT/USDC, USDT/USDC, and APT/USDT pools
 const APT_USDC_POOL_ADDRESS: &str = "0x71c6ae634bd3c36470eb7e7f4fb0912973bb31543dfdb7d7fb6863d886d81d67";
 const USDT_USDC_POOL_ADDRESS: &str = "0xac21d74053633a030281bd0311361442eb2c4f2f95b19c4599b741c439cff77f";
+const APT_USDT_POOL_ADDRESS: &str = "0xe8797d7adaf48abd7becddc9c4494f1309d9a83a6ea0c4be708482cbc54e36af";
 
 const APT_COIN_TYPE: &str = "0x1::aptos_coin::AptosCoin";
 const USDC_COIN_TYPE: &str = "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b";
@@ -61,7 +62,7 @@ struct PoolVolume {
     usdt_fee_24h: BigDecimal, // Total USDT fees collected in this batch
 }
 
-/// VolumeCalculator calculates real-time 24h rolling volume for each pool
+/// VolumeCalculator calculates real-time 24h rolling volume for APT/USDC, USDT/USDC, and APT/USDT pools
 pub struct VolumeCalculator {
     _placeholder: (),
 }
@@ -69,7 +70,7 @@ pub struct VolumeCalculator {
 impl VolumeCalculator {
     pub fn new() -> Self {
         info!("🚀 Initializing VolumeCalculator");
-        info!("📊 Configured for pool-based volume tracking");
+        info!("📊 Configured for APT/USDC, USDT/USDC, and APT/USDT pool volume tracking");
         Self {
             _placeholder: (),
         }
@@ -164,6 +165,7 @@ impl Processable for VolumeCalculator {
         let mut pool_volumes: HashMap<String, PoolVolume> = HashMap::new();
 
         for txn in &item.data {
+            info!("🔍 Processing transaction version: {:?}", txn);
             let transaction_version = txn.version as i64;
 
             // Extract transaction timestamp for 24h filtering
@@ -226,7 +228,7 @@ impl Processable for VolumeCalculator {
                 swap_data.swap_fee_bps = swap_fee_bps;
 
                 // Filter: Only process swaps from our target APT/USDC pool
-                if swap_data.pool != APT_USDC_POOL_ADDRESS && swap_data.pool != USDT_USDC_POOL_ADDRESS {
+                if swap_data.pool != APT_USDC_POOL_ADDRESS && swap_data.pool != USDT_USDC_POOL_ADDRESS && swap_data.pool != APT_USDT_POOL_ADDRESS {
                     debug!("⚠️ Skipping swap from pool {}, not our target pool", swap_data.pool);
                     continue;
                 }
@@ -341,6 +343,53 @@ impl Processable for VolumeCalculator {
                             usdc_net_volume, usdt_amount, usdc_fee);
                     } else {
                         debug!("⚠️ Swap doesn't involve USDT/USDC pair in USDT/USDC pool, skipping: {} -> {}", 
+                            swap_data.from_token, swap_data.to_token);
+                        continue;
+                    }
+                }
+                // Handle APT/USDT pool swaps
+                else if swap_data.pool == APT_USDT_POOL_ADDRESS {
+                    if swap_data.from_token == APT_COIN_TYPE && swap_data.to_token == USDT_COIN_TYPE {
+                        // APT -> USDT: User sells APT, buys USDT
+                        let apt_amount = &raw_amount_in / BigDecimal::from(10_u64.pow(APT_DECIMALS as u32));
+                        let usdt_amount = &raw_amount_out / BigDecimal::from(10_u64.pow(USDT_DECIMALS as u32));
+                        
+                        // Calculate fee (fee is charged on amount_in, which is APT)
+                        let apt_fee = &apt_amount * &fee_rate;
+                        
+                        // Calculate net volume (amount_in - fee) for APT
+                        let apt_net_volume = &apt_amount - &apt_fee;
+                        
+                        // Volume calculations: APT uses net amount (without fee), USDT uses amount_out
+                        pool_entry.apt_volume_24h += apt_net_volume.clone();
+                        pool_entry.usdt_volume_24h += usdt_amount.clone();
+                        pool_entry.apt_fee_24h += apt_fee.clone();
+                        
+                        info!("📈 APT->USDT: {} APT sold, {} USDT bought, {} APT fee ({}bps) | Net APT vol: {}, USDT vol: {}, APT fee: {}", 
+                            apt_amount, usdt_amount, apt_fee, swap_fee_bps, 
+                            apt_net_volume, usdt_amount, apt_fee);
+                            
+                    } else if swap_data.from_token == USDT_COIN_TYPE && swap_data.to_token == APT_COIN_TYPE {
+                        // USDT -> APT: User sells USDT, buys APT
+                        let usdt_amount = &raw_amount_in / BigDecimal::from(10_u64.pow(USDT_DECIMALS as u32));
+                        let apt_amount = &raw_amount_out / BigDecimal::from(10_u64.pow(APT_DECIMALS as u32));
+                        
+                        // Calculate fee (fee is charged on amount_in, which is USDT)
+                        let usdt_fee = &usdt_amount * &fee_rate;
+                        
+                        // Calculate net volume (amount_in - fee) for USDT
+                        let usdt_net_volume = &usdt_amount - &usdt_fee;
+                        
+                        // Volume calculations: USDT uses net amount (without fee), APT uses amount_out
+                        pool_entry.apt_volume_24h += apt_amount.clone();
+                        pool_entry.usdt_volume_24h += usdt_net_volume.clone();
+                        pool_entry.usdt_fee_24h += usdt_fee.clone();
+                        
+                        info!("📉 USDT->APT: {} USDT sold, {} APT bought, {} USDT fee ({}bps) | Net USDT vol: {}, APT vol: {}, USDT fee: {}", 
+                            usdt_amount, apt_amount, usdt_fee, swap_fee_bps,
+                            usdt_net_volume, apt_amount, usdt_fee);
+                    } else {
+                        debug!("⚠️ Swap doesn't involve APT/USDT pair in APT/USDT pool, skipping: {} -> {}", 
                             swap_data.from_token, swap_data.to_token);
                         continue;
                     }
