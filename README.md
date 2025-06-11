@@ -1,256 +1,222 @@
-> [!IMPORTANT]
-> 
-> The latest Indexer SDK examples are no longer available in this repository. Please refer to the following links:
-> 
-> - [aptos-indexer-processor-sdk/examples](https://github.com/aptos-labs/aptos-indexer-processor-sdk/tree/main/examples) - Find up-to-date examples for using the Indexer SDK.
-> - [aptos-indexer-processors-v2](https://github.com/aptos-labs/aptos-indexer-processors-v2) - Access the latest core Aptos processors.
+# Tasmil APT/USDC Indexer
 
-# :sparkles: Quickstart Guide on Aptos Indexer SDK
-In this guide, we’re going to walk you through all the steps involved with creating a basic events processor in Rust to
-track events on the Aptos blockchain. At the end of this guide, you’ll be able to run the events processor and customize
-the processor for your indexing needs.
+🚀 **High-performance Aptos blockchain indexer for tracking APT/USDC trading data on CellanaFinance**
 
-# Getting started
+## 📊 Overview
 
-To get started, clone
-the [aptos-indexer-processors-example](https://github.com/aptos-labs/aptos-indexer-processor-example/tree/main) repo.
+This indexer extracts and processes **APT/USDC swap events** from CellanaFinance on the Aptos blockchain, providing:
 
-```text
-# HTTPS
-https://github.com/aptos-labs/aptos-indexer-processor-example.git
- 
-# SSH
-git@github.com:aptos-labs/aptos-indexer-processor-example.git
+- ✅ **Real-time APT price tracking** in USD
+- ✅ **24-hour volume calculations** for APT/USDC pairs
+- ✅ **Accurate decimal handling** (APT: 8 decimals, USDC: 6 decimals)
+- ✅ **PostgreSQL storage** with optimized queries
+- ✅ **Scalable processing pipeline** using Rust
+
+## 🎯 Key Features
+
+### 1. **APT Price Extraction**
+- Monitors CellanaFinance `SwapEvent` transactions
+- Calculates real-time APT price in USD based on APT/USDC swaps
+- Handles both directions: APT→USDC and USDC→APT
+
+### 2. **Volume Calculation**
+- Computes 24-hour trading volume in USD
+- Tracks total APT amounts traded
+- Calculates average price over time periods
+
+### 3. **Data Storage**
+- **`apt_prices`**: Individual swap records with price data
+- **`apt_volume_24h`**: Aggregated 24-hour volume statistics
+
+## 🏗️ Architecture
+
+```
+Aptos Blockchain → Transaction Stream → CellanaSwapExtractor → AptPriceStorer → VolumeCalculator → VolumeStorer → PostgreSQL
 ```
 
-Processors consume transactions from the Transaction Stream Service. In order to use the Labs-Hosted Transaction Stream
-Service you need an authorization token.
-Follow [this guide](https://aptos.dev/en/build/indexer/txn-stream/aptos-hosted-txn-stream#authorization-via-api-key)
-to guide to get a token from the Developer Portal. Create an API Key for `Testnet`, as this tutorial is for `Testnet`.
-Once you’re done, you should have a token that looks like this:
+### Core Components:
 
-```text
-aptoslabs_yj4bocpaKy_Q6RBP4cdBmjA8T51hto1GcVX5ZS9S65dx
+1. **`CellanaSwapExtractor`**: Extracts swap events and calculates APT prices
+2. **`AptPriceStorer`**: Stores price data to database
+3. **`VolumeCalculator`**: Computes 24h volume metrics
+4. **`VolumeStorer`**: Stores volume data to database
+
+## 📦 Database Schema
+
+### APT Prices Table
+```sql
+CREATE TABLE apt_prices (
+    id BIGSERIAL PRIMARY KEY,
+    transaction_version BIGINT NOT NULL,
+    apt_price_usd DECIMAL(20, 8) NOT NULL,
+    amount_in DECIMAL(20, 8) NOT NULL,      -- Actual token amounts (converted from raw)
+    amount_out DECIMAL(20, 8) NOT NULL,     -- Actual token amounts (converted from raw)
+    from_token VARCHAR(300) NOT NULL,
+    to_token VARCHAR(300) NOT NULL,
+    pool_address VARCHAR(66) NOT NULL,
+    timestamp_seconds BIGINT NOT NULL
+);
 ```
 
-You also need the following tools:
+### 24h Volume Table
+```sql
+CREATE TABLE apt_volume_24h (
+    id BIGSERIAL PRIMARY KEY,
+    total_volume_usd DECIMAL(20, 8) NOT NULL,
+    total_apt_amount DECIMAL(20, 8) NOT NULL,
+    avg_price DECIMAL(20, 8) NOT NULL,
+    swap_count INTEGER NOT NULL,
+    start_timestamp_seconds BIGINT NOT NULL,
+    end_timestamp_seconds BIGINT NOT NULL
+);
+```
 
-- Rust 1.79: [Installation Guide](https://www.rust-lang.org/tools/install)
-- Cargo: [Installation Guide](https://doc.rust-lang.org/cargo/getting-started/installation.html#install-rust-and-cargo)
-- Diesel CLI: [Installation Guide](https://diesel.rs/guides/getting-started.html)
+## 🚀 Quick Start
 
-We use PostgreSQL as our database in this tutorial. You’re free to use whatever you want, but this tutorial is geared
-towards PostgreSQL for the sake of simplicity. We use the following database configuration and tools:
-
-[PostgreSQL](https://www.postgresql.org/download/)
-
-- We will use a database hosted on `localhost` on the port `5432`, which should be the default.
-- When you create your username, keep track of it and the password you use for it.
-- You can view a tutorial for installing PostgreSQL and
-  psql [here](https://www.digitalocean.com/community/tutorials/how-to-install-postgresql-on-ubuntu-22-04-quickstart)
-  tool to set up your database more quickly.
-- To easily view your database data, consider using a GUI like [DBeaver](https://dbeaver.io/)
-  *recommended*, [pgAdmin](https://www.pgadmin.org/), or [Postico](https://eggerapps.at/postico2/).
-
-Explaining how to create a database is beyond the scope of this tutorial. If you are not sure how to do it, consider
-checking out tutorials on how to create a database with the `psql` tool.
-
-# Setting up your environment
-
-Make sure to start the `postgresql` service:
-
-The command for Linux/WSL might be something like:
-
+### 1. Prerequisites
 ```bash
-sudo service postgresql start
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Install PostgreSQL
+sudo apt-get install postgresql postgresql-contrib
+
+# Install diesel CLI
+cargo install diesel_cli --no-default-features --features postgres
 ```
 
-For mac, if you’re using brew, start it up with:
-
+### 2. Database Setup
 ```bash
-brew services start postgresql
+# Create database
+createdb tasmil_custom_indexer
+
+# Run migrations
+diesel migration run
 ```
 
-# **Configuring your processor**
-
-Now let’s set up the configuration details for the actual indexer processor we’re going to use.
-
-### **Set up your config.yaml file**
-
-In the example repo, there is a sample config.yaml file that should look something like this:
-
+### 3. Configuration
+Update `config.yaml` with your settings:
 ```yaml
-health_check_port: 8085
 server_config:
   processor_config:
-    type: "events_processor"
+    type: "cellana_processor"
   transaction_stream_config:
-    indexer_grpc_data_service_address: "https://grpc.testnet.aptoslabs.com:443"
-    starting_version: 0
-    # request_ending_version: 10000
-    auth_token: "AUTH_TOKEN"
-    request_name_header: "events-processor"
+    indexer_grpc_data_service_address: "https://grpc.mainnet.aptoslabs.com:443"
+    starting_version: 2854805973
   db_config:
-    postgres_connection_string: postgresql://postgres:@localhost:5432/example
+    postgres_connection_string: postgresql://username:password@localhost:5432/tasmil_custom_indexer
 ```
 
-Open the `config.yaml` file and update these fields:
-
-- `auth_token` - the auth token you got from the Developer Portal
-- `postgres_connection_string` - connection string to your PostgreSQL database
-
-### More customization with config.yaml
-
-You can customize additional configuration with the `config.yaml` file.
-
-To start at a specific ledger version, you can specify the version in the `config.yaml` file with:
-
-```yaml
-starting_version: <Starting Version>
-```
-
-To stop processing at a specific ledger version, you can specify the ending version with:
-
-```yaml
-request_ending_version: <Ending Version>
-```
-
-If you want to use a different network, change the `indexer_grpc_data_service_address` field to the corresponding
-desired value:
-
-```yaml
-# Devnet
-indexer_grpc_data_service_address: grpc.devnet.aptoslabs.com:443
-
-# Testnet
-indexer_grpc_data_service_address: grpc.testnet.aptoslabs.com:443
-
-# Mainnet
-indexer_grpc_data_service_address: grpc.mainnet.aptoslabs.com:443
-```
-
-# Explanation of the processor
-
-At a high level, each processor is responsible for receiving a stream of transactions, parsing and transforming the
-relevant data, and storing the data into a database.
-
-### Defining the events database model
-
-In `src/db/postgres/schema.rs` , you will see events table which has the following schema:
-
-```rust
-diesel::table! {
-    events (transaction_version, event_index) {
-        sequence_number -> Int8,
-        creation_number -> Int8,
-        #[max_length = 66]
-        account_address -> Varchar,
-        transaction_version -> Int8,
-        transaction_block_height -> Int8,
-        #[sql_name = "type"]
-        type_ -> Text,
-        data -> Jsonb,
-        inserted_at -> Timestamp,
-        event_index -> Int8,
-        #[max_length = 300]
-        indexed_type -> Varchar,
-    }
-}
-```
-
-The events schema represents the data that this processor is indexing. This [`schema.rs`](http://schema.rs) file is an
-autogenerated from the database migrations. In the next section, we’ll go over how these migrations are run.
-
-There are two other important tables:
-
-- `ledger_infos` which tracks the chain id of the ledger being indexed
-- `processor_status` which tracks the `last_success_version` of the processor
-
-### Defining the events processor
-
-The file `src/processors/events/events_processor.rs` contains the code which defines the events processor. Inside of
-`run_processor` there are a few key components:
-
-1. First, we setup the processor:
-    1. `run_migrations` automatically runs the database migrations defined in `src/db/postgres/migrations`
-    2. We merge the starting version in `config.yaml`  and the `processor_status.last_success_version` in the database
-       to get the final starting version for the processor. This allows us to restart the processor from a previously
-       processed version.
-    3. We check the `ledger_infos.chain_id` to make sure the processor is indexing the correct chain
-2. Next, we instantiate the processor steps. Here we explain the purpose of each step:
-    1. `TransactionStreamStep` provides a stream of transactions to the processor
-    2. `EventsExtractor` extracts events data from each transaction
-    3. `EventsStorer` inserts the extracted events into the `events` table
-    4. `LatestVersionTracker` keeps track of the latest processed version and updates the `processor_status` table
-3. Lastly, we connect the processor steps together.
-    1. `ProcessorBuilder::new_with_inputless_first_step` takes in the first step of the processor. In most cases, the
-       first step is a `TransactionStreamStep` .
-    2. The rest of the steps are connected with `connect_to`. `connect_to` creates a channel between the steps so the
-       output of one step becomes the input of the next step.
-    3. And then we end the builder with `end_and_return_output_receiver`.
-
-# Running the processor
-
-With the `config.yaml` you created earlier, you’re ready to run the events processor:
-
+### 4. Run the Indexer
 ```bash
-cd aptos-indexer-processor-example
-cargo run --release -- -c config.yaml
+# Make script executable
+chmod +x run-tasmil.sh
+
+# Start indexing
+./run-tasmil.sh
 ```
 
-You should see the processor start to index Aptos blockchain events!
+## 📈 Monitored Data
 
-```text
-{"timestamp":"2024-08-15T01:06:35.169217Z","level":"INFO","message":"[Transaction Stream] Received transactions from GRPC.","stream_address":"https://grpc.testnet.aptoslabs.com/","connection_id":"5575cb8c-61fb-498f-aaae-868d1e8773ac","start_version":0,"end_version":4999,"start_txn_timestamp_iso":"1970-01-01T00:00:00.000000000Z","end_txn_timestamp_iso":"2022-09-09T01:49:02.023089000Z","num_of_transactions":5000,"size_in_bytes":5708539,"duration_in_secs":0.310734,"tps":16078,"bytes_per_sec":18371143.80788713,"filename":"/Users/reneetso/.cargo/git/checkouts/aptos-indexer-processor-sdk-2f3940a333c8389d/e1e1bdd/rust/transaction-stream/src/transaction_stream.rs","line_number":400,"threadName":"tokio-runtime-worker","threadId":"ThreadId(6)"}
-{"timestamp":"2024-08-15T01:06:35.257756Z","level":"INFO","message":"Events version [0, 4999] stored successfully","filename":"src/processors/events/events_storer.rs","line_number":75,"threadName":"tokio-runtime-worker","threadId":"ThreadId(10)"}
-{"timestamp":"2024-08-15T01:06:35.257801Z","level":"INFO","message":"Finished processing events from versions [0, 4999]","filename":"src/processors/events/events_processor.rs","line_number":90,"threadName":"tokio-runtime-worker","threadId":"ThreadId(17)"}
+### **Pool Information**
+- **Pool Address**: `0x71c6ae634bd3c36470eb7e7f4fb0912973bb31543dfdb7d7fb6863d886d81d67`
+- **Trading Pair**: APT/USDC
+- **APT Decimals**: 8
+- **USDC Decimals**: 6
+
+### **Tracked Events**
+- **Event Type**: `0x4bf51972879e3b95c4781a5cdcb9e1ee24ef483e7d22f2d903626f126df62bd1::liquidity_pool::SwapEvent`
+- **Swap Directions**: 
+  - APT → USDC
+  - USDC → APT
+
+## 🔧 Development
+
+### Build
+```bash
+cargo build --release
 ```
 
-# Customizing the processor
-
-In most cases, you want to index events from your own contracts. The example processor offers a good starting point to
-creating your own custom processor.
-
-To customize the processor to index events from your custom contract, you can make change in these places:
-
-- `EventsExtractor`
-    - In `process()`, you can filter by specific event types and extract specific event data from your custom contract
-- `EventsStorer`
-    - If you need to change the database model, you can generate a new database migration by going to `src/db/postgres`
-      and running
-    ```bash
-    diesel migration generate {migration_name} 
-    ```
-    - Add your migration changes to `up.sql` and `down.sql`, then run
-  
-    ```bash
-    diesel migration run --database-url={YOUR_DATABASE_URL}
-    ```
-    to update `schema.rs`.
-
-    - And then update the `EventsStorer.process()` to handle storing the events data to the updated database model
-
-# Upgrading the Indexer SDK
-
-To upgrade the Indexer SDK, you need to update the SDK dependency in  `Cargo.toml` :
-
-```toml
-aptos-indexer-processor-sdk = { git = "https://github.com/aptos-labs/aptos-indexer-processor-sdk.git", rev = "e1e1bdd9349f0a68c9fc53b7e2cebda9e2ce92b7" }
-aptos-indexer-processor-sdk-server-framework = { git = "https://github.com/aptos-labs/aptos-indexer-processor-sdk.git", rev = "e1e1bdd9349f0a68c9fc53b7e2cebda9e2ce92b7" }
+### Run Tests
+```bash
+cargo test
 ```
 
-### Future release strategy
+### Create New Migration
+```bash
+diesel migration generate migration_name
+```
 
-In the future, we plan to implement the following release strategy for the Indexer SDK:
+## 📊 Example Queries
 
-> [!WARNING]
-> We are NOT using semantic versioning, but borrowing its numeric release pattern.
+### Get Latest APT Price
+```sql
+SELECT apt_price_usd, timestamp_seconds 
+FROM apt_prices 
+ORDER BY timestamp_seconds DESC 
+LIMIT 1;
+```
 
-Given a version number `MAJOR.MINOR.PATCH` (`X.Y.Z`), increment the:
+### Get 24h Volume
+```sql
+SELECT total_volume_usd, avg_price, swap_count
+FROM apt_volume_24h
+ORDER BY end_timestamp_seconds DESC
+LIMIT 1;
+```
 
-- MAJOR version when we make incompatible SDK changes (e.g. remove deprecated features, making changes to
-  ProcessorBuilder)
-- MINOR version matches Aptos node version (e.g. proto or bcs upgrades)
-    - Since the SDK will re-export the protos, we’ll need to bump the minor version every time there’s a proto upgrade
-- PATCH version when you change functionality in a backward compatible manner (e.g. bug fixes, security fixes, grpc
-  upgrades, new features / steps, improvements)
+### Price History (Last 100 swaps)
+```sql
+SELECT 
+    apt_price_usd,
+    amount_in,
+    amount_out,
+    from_token,
+    to_token,
+    timestamp_seconds
+FROM apt_prices
+ORDER BY timestamp_seconds DESC
+LIMIT 100;
+```
+
+## 🎯 Technical Details
+
+### **Decimal Conversion**
+- Raw amounts from blockchain are converted to actual token amounts
+- APT: `raw_amount / 10^8`
+- USDC: `raw_amount / 10^6`
+
+### **Price Calculation**
+```rust
+// APT → USDC
+apt_price = usdc_amount / apt_amount
+
+// USDC → APT  
+apt_price = usdc_amount / apt_amount
+```
+
+### **Performance Features**
+- Parallel transaction processing using Rayon
+- Chunked database operations
+- Connection pooling
+- Optimized SQL queries with proper indexing
+
+## 📝 License
+
+This project is licensed under the Apache 2.0 License.
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
+
+## 📞 Support
+
+For questions and support, please open an issue in the repository.
+
+---
+
+**Built with ❤️ for the Aptos ecosystem** 🚀
