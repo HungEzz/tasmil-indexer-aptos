@@ -13,15 +13,21 @@ use serde::{Deserialize, Serialize};
 #[diesel(table_name = apt_data)]
 pub struct AptData {
     pub pool: String,
-    pub total_apt_usdc_volume_24h: Option<BigDecimal>,
     pub inserted_at: NaiveDateTime,
+    pub apt_volume_24h: Option<BigDecimal>,
+    pub usdc_volume_24h: Option<BigDecimal>,
+    pub apt_fee_24h: Option<BigDecimal>,
+    pub usdc_fee_24h: Option<BigDecimal>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Insertable, Clone)]
 #[diesel(table_name = apt_data)]
 pub struct NewAptData {
     pub pool: String,
-    pub total_apt_usdc_volume_24h: Option<BigDecimal>,
+    pub apt_volume_24h: Option<BigDecimal>,
+    pub usdc_volume_24h: Option<BigDecimal>,
+    pub apt_fee_24h: Option<BigDecimal>,
+    pub usdc_fee_24h: Option<BigDecimal>,
 }
 
 // Prevent conflicts with other things named `AptData`
