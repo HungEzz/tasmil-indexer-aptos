@@ -8,6 +8,8 @@ diesel::table! {
         usdc_volume_24h -> Nullable<Numeric>,
         apt_fee_24h -> Nullable<Numeric>,
         usdc_fee_24h -> Nullable<Numeric>,
+        usdt_volume_24h -> Nullable<Numeric>,
+        usdt_fee_24h -> Nullable<Numeric>,
     }
 }
 

@@ -16,15 +16,18 @@ use tracing::{info, warn, error, debug};
 const CELLANA_SWAP_EVENT_TYPE: &str = "0x4bf51972879e3b95c4781a5cdcb9e1ee24ef483e7d22f2d903626f126df62bd1::liquidity_pool::SwapEvent";
 const CELLANA_LIQUIDITY_POOL_TYPE: &str = "0x4bf51972879e3b95c4781a5cdcb9e1ee24ef483e7d22f2d903626f126df62bd1::liquidity_pool::LiquidityPool";
 
-    // Only track the APT/USDC pool
-const TARGET_POOL_ADDRESS: &str = "0x71c6ae634bd3c36470eb7e7f4fb0912973bb31543dfdb7d7fb6863d886d81d67";
+// Track both APT/USDC and USDT/USDC pools
+const APT_USDC_POOL_ADDRESS: &str = "0x71c6ae634bd3c36470eb7e7f4fb0912973bb31543dfdb7d7fb6863d886d81d67";
+const USDT_USDC_POOL_ADDRESS: &str = "0xac21d74053633a030281bd0311361442eb2c4f2f95b19c4599b741c439cff77f";
 
 const APT_COIN_TYPE: &str = "0x1::aptos_coin::AptosCoin";
 const USDC_COIN_TYPE: &str = "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b";
+const USDT_COIN_TYPE: &str = "0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b";
 
 // Decimal places
 const APT_DECIMALS: u8 = 8;
 const USDC_DECIMALS: u8 = 6;
+const USDT_DECIMALS: u8 = 6;
 
 // Helper function to check if a transaction is within the last 24 hours
 fn is_within_24h(txn_timestamp_seconds: i64) -> bool {
@@ -51,9 +54,11 @@ struct SwapData {
 struct PoolVolume {
     pool: String,
     apt_volume_24h: BigDecimal, // Total APT traded in this batch
-    usdc_volume_24h: BigDecimal, // Total USDC traded in this batch
+    usdc_volume_24h: BigDecimal, // Total USDC traded in this batch (aggregated from both pools)
+    usdt_volume_24h: BigDecimal, // Total USDT traded in this batch
     apt_fee_24h: BigDecimal, // Total APT fees collected in this batch
-    usdc_fee_24h: BigDecimal, // Total USDC fees collected in this batch
+    usdc_fee_24h: BigDecimal, // Total USDC fees collected in this batch (aggregated from both pools)
+    usdt_fee_24h: BigDecimal, // Total USDT fees collected in this batch
 }
 
 /// VolumeCalculator calculates real-time 24h rolling volume for each pool
@@ -221,12 +226,12 @@ impl Processable for VolumeCalculator {
                 swap_data.swap_fee_bps = swap_fee_bps;
 
                 // Filter: Only process swaps from our target APT/USDC pool
-                if swap_data.pool != TARGET_POOL_ADDRESS {
+                if swap_data.pool != APT_USDC_POOL_ADDRESS && swap_data.pool != USDT_USDC_POOL_ADDRESS {
                     debug!("⚠️ Skipping swap from pool {}, not our target pool", swap_data.pool);
                     continue;
                 }
 
-                info!("🎯 Processing swap from target APT/USDC pool: {}", swap_data.pool);
+                info!("🎯 Processing swap from target pool: {}", swap_data.pool);
 
                 // Get or create pool volume entry
                 let pool_entry = pool_volumes.entry(swap_data.pool.clone()).or_insert_with(|| {
@@ -234,8 +239,10 @@ impl Processable for VolumeCalculator {
                         pool: swap_data.pool.clone(),
                         apt_volume_24h: BigDecimal::zero(),
                         usdc_volume_24h: BigDecimal::zero(),
+                        usdt_volume_24h: BigDecimal::zero(),
                         apt_fee_24h: BigDecimal::zero(),
                         usdc_fee_24h: BigDecimal::zero(),
+                        usdt_fee_24h: BigDecimal::zero(),
                     }
                 });
 
@@ -244,76 +251,147 @@ impl Processable for VolumeCalculator {
                 let raw_amount_out = BigDecimal::from_str(&swap_data.amount_out).unwrap_or_else(|_| BigDecimal::zero());
                 let fee_rate = BigDecimal::from(swap_fee_bps) / BigDecimal::from(10000); // Convert bps to decimal
 
-                if swap_data.from_token == APT_COIN_TYPE && swap_data.to_token == USDC_COIN_TYPE {
-                    // APT -> USDC: User sells APT, buys USDC
-                    let apt_amount = &raw_amount_in / BigDecimal::from(10_u64.pow(APT_DECIMALS as u32));
-                    let usdc_amount = &raw_amount_out / BigDecimal::from(10_u64.pow(USDC_DECIMALS as u32));
-                    
-                    // Calculate fee (fee is charged on amount_in, which is APT)
-                    let apt_fee = &apt_amount * &fee_rate;
-                    
-                    // Calculate net volume (amount_in - fee) for APT
-                    let apt_net_volume = &apt_amount - &apt_fee;
-                    
-                    // Volume calculations: APT uses net amount (without fee), USDC uses amount_out
-                    pool_entry.apt_volume_24h += apt_net_volume.clone();
-                    pool_entry.usdc_volume_24h += usdc_amount.clone();
-                    pool_entry.apt_fee_24h += apt_fee.clone();
-                    
-                    info!("📈 APT->USDC: {} APT sold, {} USDC bought, {} APT fee ({}bps) | Net APT vol: {}, USDC vol: {}, APT fee: {}, Total volumes: APT {}, USDC {}", 
-                        apt_amount, usdc_amount, apt_fee, swap_fee_bps, 
-                        apt_net_volume, usdc_amount, apt_fee,
-                        pool_entry.apt_volume_24h, pool_entry.usdc_volume_24h);
+                // Handle APT/USDC pool swaps
+                if swap_data.pool == APT_USDC_POOL_ADDRESS {
+                    if swap_data.from_token == APT_COIN_TYPE && swap_data.to_token == USDC_COIN_TYPE {
+                        // APT -> USDC: User sells APT, buys USDC
+                        let apt_amount = &raw_amount_in / BigDecimal::from(10_u64.pow(APT_DECIMALS as u32));
+                        let usdc_amount = &raw_amount_out / BigDecimal::from(10_u64.pow(USDC_DECIMALS as u32));
                         
-                } else if swap_data.from_token == USDC_COIN_TYPE && swap_data.to_token == APT_COIN_TYPE {
-                    // USDC -> APT: User sells USDC, buys APT
-                    let usdc_amount = &raw_amount_in / BigDecimal::from(10_u64.pow(USDC_DECIMALS as u32));
-                    let apt_amount = &raw_amount_out / BigDecimal::from(10_u64.pow(APT_DECIMALS as u32));
-                    
-                    // Calculate fee (fee is charged on amount_in, which is USDC)
-                    let usdc_fee = &usdc_amount * &fee_rate;
-                    
-                    // Calculate net volume (amount_in - fee) for USDC
-                    let usdc_net_volume = &usdc_amount - &usdc_fee;
-                    
-                    // Volume calculations: USDC uses net amount (without fee), APT uses amount_out
-                    pool_entry.apt_volume_24h += apt_amount.clone();
-                    pool_entry.usdc_volume_24h += usdc_net_volume.clone();
-                    pool_entry.usdc_fee_24h += usdc_fee.clone();
-                    
-                    info!("📉 USDC->APT: {} USDC sold, {} APT bought, {} USDC fee ({}bps) | Net USDC vol: {}, APT vol: {}, USDC fee: {}, Total volumes: APT {}, USDC {}", 
-                        usdc_amount, apt_amount, usdc_fee, swap_fee_bps,
-                        usdc_net_volume, apt_amount, usdc_fee,
-                        pool_entry.apt_volume_24h, pool_entry.usdc_volume_24h);
+                        // Calculate fee (fee is charged on amount_in, which is APT)
+                        let apt_fee = &apt_amount * &fee_rate;
                         
-                } else {
-                    debug!("⚠️ Swap doesn't involve APT/USDC pair, skipping: {} -> {}", 
-                        swap_data.from_token, swap_data.to_token);
-                    continue;
+                        // Calculate net volume (amount_in - fee) for APT
+                        let apt_net_volume = &apt_amount - &apt_fee;
+                        
+                        // Volume calculations: APT uses net amount (without fee), USDC uses amount_out
+                        pool_entry.apt_volume_24h += apt_net_volume.clone();
+                        pool_entry.usdc_volume_24h += usdc_amount.clone();
+                        pool_entry.apt_fee_24h += apt_fee.clone();
+                        
+                        info!("📈 APT->USDC: {} APT sold, {} USDC bought, {} APT fee ({}bps) | Net APT vol: {}, USDC vol: {}, APT fee: {}", 
+                            apt_amount, usdc_amount, apt_fee, swap_fee_bps, 
+                            apt_net_volume, usdc_amount, apt_fee);
+                            
+                    } else if swap_data.from_token == USDC_COIN_TYPE && swap_data.to_token == APT_COIN_TYPE {
+                        // USDC -> APT: User sells USDC, buys APT
+                        let usdc_amount = &raw_amount_in / BigDecimal::from(10_u64.pow(USDC_DECIMALS as u32));
+                        let apt_amount = &raw_amount_out / BigDecimal::from(10_u64.pow(APT_DECIMALS as u32));
+                        
+                        // Calculate fee (fee is charged on amount_in, which is USDC)
+                        let usdc_fee = &usdc_amount * &fee_rate;
+                        
+                        // Calculate net volume (amount_in - fee) for USDC
+                        let usdc_net_volume = &usdc_amount - &usdc_fee;
+                        
+                        // Volume calculations: USDC uses net amount (without fee), APT uses amount_out
+                        pool_entry.apt_volume_24h += apt_amount.clone();
+                        pool_entry.usdc_volume_24h += usdc_net_volume.clone();
+                        pool_entry.usdc_fee_24h += usdc_fee.clone();
+                        
+                        info!("📉 USDC->APT: {} USDC sold, {} APT bought, {} USDC fee ({}bps) | Net USDC vol: {}, APT vol: {}, USDC fee: {}", 
+                            usdc_amount, apt_amount, usdc_fee, swap_fee_bps,
+                            usdc_net_volume, apt_amount, usdc_fee);
+                    } else {
+                        debug!("⚠️ Swap doesn't involve APT/USDC pair in APT/USDC pool, skipping: {} -> {}", 
+                            swap_data.from_token, swap_data.to_token);
+                        continue;
+                    }
+                }
+                // Handle USDT/USDC pool swaps
+                else if swap_data.pool == USDT_USDC_POOL_ADDRESS {
+                    if swap_data.from_token == USDT_COIN_TYPE && swap_data.to_token == USDC_COIN_TYPE {
+                        // USDT -> USDC: User sells USDT, buys USDC
+                        let usdt_amount = &raw_amount_in / BigDecimal::from(10_u64.pow(USDT_DECIMALS as u32));
+                        let usdc_amount = &raw_amount_out / BigDecimal::from(10_u64.pow(USDC_DECIMALS as u32));
+                        
+                        // Calculate fee (fee is charged on amount_in, which is USDT)
+                        let usdt_fee = &usdt_amount * &fee_rate;
+                        
+                        // Calculate net volume (amount_in - fee) for USDT
+                        let usdt_net_volume = &usdt_amount - &usdt_fee;
+                        
+                        // Volume calculations: USDT uses net amount (without fee), USDC uses amount_out
+                        pool_entry.usdt_volume_24h += usdt_net_volume.clone();
+                        pool_entry.usdc_volume_24h += usdc_amount.clone();
+                        pool_entry.usdt_fee_24h += usdt_fee.clone();
+                        
+                        info!("💰 USDT->USDC: {} USDT sold, {} USDC bought, {} USDT fee ({}bps) | Net USDT vol: {}, USDC vol: {}, USDT fee: {}", 
+                            usdt_amount, usdc_amount, usdt_fee, swap_fee_bps,
+                            usdt_net_volume, usdc_amount, usdt_fee);
+                            
+                    } else if swap_data.from_token == USDC_COIN_TYPE && swap_data.to_token == USDT_COIN_TYPE {
+                        // USDC -> USDT: User sells USDC, buys USDT
+                        let usdc_amount = &raw_amount_in / BigDecimal::from(10_u64.pow(USDC_DECIMALS as u32));
+                        let usdt_amount = &raw_amount_out / BigDecimal::from(10_u64.pow(USDT_DECIMALS as u32));
+                        
+                        // Calculate fee (fee is charged on amount_in, which is USDC)
+                        let usdc_fee = &usdc_amount * &fee_rate;
+                        
+                        // Calculate net volume (amount_in - fee) for USDC
+                        let usdc_net_volume = &usdc_amount - &usdc_fee;
+                        
+                        // Volume calculations: USDC uses net amount (without fee), USDT uses amount_out
+                        pool_entry.usdt_volume_24h += usdt_amount.clone();
+                        pool_entry.usdc_volume_24h += usdc_net_volume.clone();
+                        pool_entry.usdc_fee_24h += usdc_fee.clone();
+                        
+                        info!("💸 USDC->USDT: {} USDC sold, {} USDT bought, {} USDC fee ({}bps) | Net USDC vol: {}, USDT vol: {}, USDC fee: {}", 
+                            usdc_amount, usdt_amount, usdc_fee, swap_fee_bps,
+                            usdc_net_volume, usdt_amount, usdc_fee);
+                    } else {
+                        debug!("⚠️ Swap doesn't involve USDT/USDC pair in USDT/USDC pool, skipping: {} -> {}", 
+                            swap_data.from_token, swap_data.to_token);
+                        continue;
+                    }
                 }
             }
         }
 
-        // Convert to NewAptData records for database insertion
-        let new_apt_data: Vec<NewAptData> = pool_volumes.into_values().map(|pool_volume| {
-            NewAptData {
-                pool: pool_volume.pool,
-                apt_volume_24h: Some(pool_volume.apt_volume_24h),
-                usdc_volume_24h: Some(pool_volume.usdc_volume_24h),
-                apt_fee_24h: Some(pool_volume.apt_fee_24h),
-                usdc_fee_24h: Some(pool_volume.usdc_fee_24h),
-            }
-        }).collect();
+        // Aggregate volumes from all pools into a single record
+        // USDC volumes and fees will be combined from both pools
+        let mut aggregated_apt_volume = BigDecimal::zero();
+        let mut aggregated_usdc_volume = BigDecimal::zero();
+        let mut aggregated_usdt_volume = BigDecimal::zero();
+        let mut aggregated_apt_fee = BigDecimal::zero();
+        let mut aggregated_usdc_fee = BigDecimal::zero();
+        let mut aggregated_usdt_fee = BigDecimal::zero();
 
-        info!("✅ Volume Calculator processed {} pools in this batch", new_apt_data.len());
+        for pool_volume in pool_volumes.values() {
+            aggregated_apt_volume += &pool_volume.apt_volume_24h;
+            aggregated_usdc_volume += &pool_volume.usdc_volume_24h;
+            aggregated_usdt_volume += &pool_volume.usdt_volume_24h;
+            aggregated_apt_fee += &pool_volume.apt_fee_24h;
+            aggregated_usdc_fee += &pool_volume.usdc_fee_24h;
+            aggregated_usdt_fee += &pool_volume.usdt_fee_24h;
+        }
+
+        // Create a single aggregated record using the APT/USDC pool address as the identifier
+        let new_apt_data = if !pool_volumes.is_empty() {
+            vec![NewAptData {
+                pool: APT_USDC_POOL_ADDRESS.to_string(), // Use APT/USDC pool address as the identifier
+                apt_volume_24h: if aggregated_apt_volume.is_zero() { None } else { Some(aggregated_apt_volume.clone()) },
+                usdc_volume_24h: if aggregated_usdc_volume.is_zero() { None } else { Some(aggregated_usdc_volume.clone()) },
+                usdt_volume_24h: if aggregated_usdt_volume.is_zero() { None } else { Some(aggregated_usdt_volume.clone()) },
+                apt_fee_24h: if aggregated_apt_fee.is_zero() { None } else { Some(aggregated_apt_fee.clone()) },
+                usdc_fee_24h: if aggregated_usdc_fee.is_zero() { None } else { Some(aggregated_usdc_fee.clone()) },
+                usdt_fee_24h: if aggregated_usdt_fee.is_zero() { None } else { Some(aggregated_usdt_fee.clone()) },
+            }]
+        } else {
+            vec![]
+        };
+
+        info!("✅ Volume Calculator processed {} pools in this batch", pool_volumes.len());
         
-        for data in &new_apt_data {
-            info!("📊 Pool {}: APT vol: {:?}, USDC vol: {:?}, APT fee: {:?}, USDC fee: {:?}", 
-                data.pool, 
+        if !new_apt_data.is_empty() {
+            let data = &new_apt_data[0];
+            info!("📊 Aggregated volumes: APT vol: {:?}, USDC vol: {:?}, USDT vol: {:?}, APT fee: {:?}, USDC fee: {:?}, USDT fee: {:?}", 
                 data.apt_volume_24h, 
                 data.usdc_volume_24h,
+                data.usdt_volume_24h,
                 data.apt_fee_24h,
-                data.usdc_fee_24h);
+                data.usdc_fee_24h,
+                data.usdt_fee_24h);
         }
 
         Ok(Some(TransactionContext {

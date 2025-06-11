@@ -64,37 +64,43 @@ impl TasmilProcessor {
         processor
     }
 
-    async fn get_current_volumes(&self, pool_address: &str) -> Result<(BigDecimal, BigDecimal, BigDecimal, BigDecimal), ProcessorError> {
+    async fn get_current_volumes(&self, pool_address: &str) -> Result<(BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal), ProcessorError> {
         let mut conn = self.connection_pool.get().await.map_err(|e| {
             ProcessorError::ProcessError {
                 message: format!("Failed to get database connection: {}", e),
             }
         })?;
 
-        let existing_record: Option<AptData> = apt_data::table
+        let current_data: Option<AptData> = apt_data::table
             .filter(apt_data::pool.eq(pool_address))
             .first(&mut conn)
             .await
             .optional()
             .map_err(|e| {
                 ProcessorError::ProcessError {
-                    message: format!("Failed to query current volumes: {}", e),
+                    message: format!("Failed to query current data: {}", e),
                 }
             })?;
 
-        match existing_record {
-            Some(record) => {
-                let apt_volume = record.apt_volume_24h.unwrap_or_else(|| BigDecimal::zero());
-                let usdc_volume = record.usdc_volume_24h.unwrap_or_else(|| BigDecimal::zero());
-                let apt_fee = record.apt_fee_24h.unwrap_or_else(|| BigDecimal::zero());
-                let usdc_fee = record.usdc_fee_24h.unwrap_or_else(|| BigDecimal::zero());
-                debug!("📊 Current data for pool {}: APT vol: {}, USDC vol: {}, APT fee: {}, USDC fee: {}", 
-                    pool_address, apt_volume, usdc_volume, apt_fee, usdc_fee);
-                Ok((apt_volume, usdc_volume, apt_fee, usdc_fee))
-            }
+        let zero_decimal = BigDecimal::zero();
+        match current_data {
+            Some(data) => {
+                let current_apt_volume = data.apt_volume_24h.unwrap_or_else(|| zero_decimal.clone());
+                let current_usdc_volume = data.usdc_volume_24h.unwrap_or_else(|| zero_decimal.clone());
+                let current_usdt_volume = data.usdt_volume_24h.unwrap_or_else(|| zero_decimal.clone());
+                let current_apt_fee = data.apt_fee_24h.unwrap_or_else(|| zero_decimal.clone());
+                let current_usdc_fee = data.usdc_fee_24h.unwrap_or_else(|| zero_decimal.clone());
+                let current_usdt_fee = data.usdt_fee_24h.unwrap_or_else(|| zero_decimal.clone());
+                
+                debug!("📊 Current volumes for {}: APT={}, USDC={}, USDT={}, APT_fee={}, USDC_fee={}, USDT_fee={}", 
+                    pool_address, current_apt_volume, current_usdc_volume, current_usdt_volume,
+                    current_apt_fee, current_usdc_fee, current_usdt_fee);
+                    
+                Ok((current_apt_volume, current_usdc_volume, current_usdt_volume, current_apt_fee, current_usdc_fee, current_usdt_fee))
+            },
             None => {
-                debug!("📊 No existing data for pool {}, starting with zero", pool_address);
-                Ok((BigDecimal::zero(), BigDecimal::zero(), BigDecimal::zero(), BigDecimal::zero()))
+                debug!("📊 No existing data for pool {}, starting from zero", pool_address);
+                Ok((zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal))
             }
         }
     }
@@ -115,18 +121,22 @@ impl TasmilProcessor {
             let zero_decimal = BigDecimal::zero();
             let batch_apt_volume = record.apt_volume_24h.as_ref().unwrap_or(&zero_decimal);
             let batch_usdc_volume = record.usdc_volume_24h.as_ref().unwrap_or(&zero_decimal);
+            let batch_usdt_volume = record.usdt_volume_24h.as_ref().unwrap_or(&zero_decimal);
             let batch_apt_fee = record.apt_fee_24h.as_ref().unwrap_or(&zero_decimal);
             let batch_usdc_fee = record.usdc_fee_24h.as_ref().unwrap_or(&zero_decimal);
+            let batch_usdt_fee = record.usdt_fee_24h.as_ref().unwrap_or(&zero_decimal);
             
             // Get current volumes and fees first
-            let (current_apt_volume, current_usdc_volume, current_apt_fee, current_usdc_fee) = 
+            let (current_apt_volume, current_usdc_volume, current_usdt_volume, current_apt_fee, current_usdc_fee, current_usdt_fee) = 
                 self.get_current_volumes(&record.pool).await?;
             
             // Accumulate both volumes and fees
             let new_apt_volume = &current_apt_volume + batch_apt_volume;
             let new_usdc_volume = &current_usdc_volume + batch_usdc_volume;
+            let new_usdt_volume = &current_usdt_volume + batch_usdt_volume;
             let new_apt_fee = &current_apt_fee + batch_apt_fee;
             let new_usdc_fee = &current_usdc_fee + batch_usdc_fee;
+            let new_usdt_fee = &current_usdt_fee + batch_usdt_fee;
             
             // UPSERT: INSERT or UPDATE if pool exists
             match diesel::insert_into(apt_data::table)
@@ -134,28 +144,34 @@ impl TasmilProcessor {
                     pool: record.pool.clone(),
                     apt_volume_24h: Some(new_apt_volume.clone()),
                     usdc_volume_24h: Some(new_usdc_volume.clone()),
+                    usdt_volume_24h: Some(new_usdt_volume.clone()),
                     apt_fee_24h: Some(new_apt_fee.clone()),
                     usdc_fee_24h: Some(new_usdc_fee.clone()),
+                    usdt_fee_24h: Some(new_usdt_fee.clone()),
                 })
                 .on_conflict(apt_data::pool)
                 .do_update()
                 .set((
                     apt_data::apt_volume_24h.eq(excluded(apt_data::apt_volume_24h)),
                     apt_data::usdc_volume_24h.eq(excluded(apt_data::usdc_volume_24h)),
+                    apt_data::usdt_volume_24h.eq(excluded(apt_data::usdt_volume_24h)),
                     apt_data::apt_fee_24h.eq(excluded(apt_data::apt_fee_24h)),
                     apt_data::usdc_fee_24h.eq(excluded(apt_data::usdc_fee_24h)),
+                    apt_data::usdt_fee_24h.eq(excluded(apt_data::usdt_fee_24h)),
                     apt_data::inserted_at.eq(diesel::dsl::now)
                 ))
                 .execute(&mut conn)
                 .await
             {
                 Ok(_) => {
-                    info!("✅ Updated rolling data for pool {}: APT vol +{} (total: {}), USDC vol +{} (total: {}), APT fee +{} (total: {}), USDC fee +{} (total: {})", 
+                    info!("✅ Updated rolling data for pool {}: APT vol +{} (total: {}), USDC vol +{} (total: {}), USDT vol +{} (total: {}), APT fee +{} (total: {}), USDC fee +{} (total: {}), USDT fee +{} (total: {})", 
                         record.pool, 
                         batch_apt_volume, new_apt_volume, 
                         batch_usdc_volume, new_usdc_volume,
+                        batch_usdt_volume, new_usdt_volume,
                         batch_apt_fee, new_apt_fee,
-                        batch_usdc_fee, new_usdc_fee);
+                        batch_usdc_fee, new_usdc_fee,
+                        batch_usdt_fee, new_usdt_fee);
                 },
                 Err(e) => {
                     error!("❌ Failed to update data for pool {}: {}", record.pool, e);
@@ -216,8 +232,10 @@ impl TasmilProcessor {
                     .set((
                         apt_data::apt_volume_24h.eq(Some(BigDecimal::zero())),
                         apt_data::usdc_volume_24h.eq(Some(BigDecimal::zero())),
+                        apt_data::usdt_volume_24h.eq(Some(BigDecimal::zero())),
                         apt_data::apt_fee_24h.eq(Some(BigDecimal::zero())),
                         apt_data::usdc_fee_24h.eq(Some(BigDecimal::zero())),
+                        apt_data::usdt_fee_24h.eq(Some(BigDecimal::zero())),
                         apt_data::inserted_at.eq(diesel::dsl::now)
                     ))
                     .execute(&mut conn)

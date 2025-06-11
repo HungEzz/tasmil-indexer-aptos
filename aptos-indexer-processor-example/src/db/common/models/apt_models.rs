@@ -18,6 +18,8 @@ pub struct AptData {
     pub usdc_volume_24h: Option<BigDecimal>,
     pub apt_fee_24h: Option<BigDecimal>,
     pub usdc_fee_24h: Option<BigDecimal>,
+    pub usdt_volume_24h: Option<BigDecimal>,
+    pub usdt_fee_24h: Option<BigDecimal>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Insertable, Clone)]
@@ -28,6 +30,8 @@ pub struct NewAptData {
     pub usdc_volume_24h: Option<BigDecimal>,
     pub apt_fee_24h: Option<BigDecimal>,
     pub usdc_fee_24h: Option<BigDecimal>,
+    pub usdt_volume_24h: Option<BigDecimal>,
+    pub usdt_fee_24h: Option<BigDecimal>,
 }
 
 // Prevent conflicts with other things named `AptData`
