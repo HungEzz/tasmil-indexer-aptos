@@ -44,8 +44,10 @@ impl TasmilProcessor {
                     .set((
                         apt_data::apt_volume_24h.eq(Some(BigDecimal::zero())),
                         apt_data::usdc_volume_24h.eq(Some(BigDecimal::zero())),
+                        apt_data::usdt_volume_24h.eq(Some(BigDecimal::zero())),
                         apt_data::apt_fee_24h.eq(Some(BigDecimal::zero())),
                         apt_data::usdc_fee_24h.eq(Some(BigDecimal::zero())),
+                        apt_data::usdt_fee_24h.eq(Some(BigDecimal::zero())),
                         apt_data::inserted_at.eq(diesel::dsl::now)
                     ))
                     .execute(&mut conn)
@@ -273,6 +275,9 @@ impl Processable for TasmilProcessor {
             item.metadata.start_version, item.metadata.end_version, item.data.len()
         );
 
+        // Cleanup old data (older than 24 hours) FIRST before processing new data
+        self.cleanup_old_data().await?;
+
         // Calculate volume data using VolumeCalculator (with 24h filtering)
         let volume_context = match self.volume_calculator.process(item.clone()).await? {
             Some(ctx) => ctx,
@@ -287,9 +292,6 @@ impl Processable for TasmilProcessor {
 
         // Insert new volume records to database
         self.upsert_pool_volumes(volume_context.data).await?;
-
-        // Cleanup old data (older than 24 hours) 
-        self.cleanup_old_data().await?;
 
         // Send notification
         if let Err(e) = self.sender.send(format!(

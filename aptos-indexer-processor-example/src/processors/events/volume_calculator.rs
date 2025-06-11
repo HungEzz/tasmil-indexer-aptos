@@ -416,19 +416,16 @@ impl Processable for VolumeCalculator {
         }
 
         // Create a single aggregated record using the APT/USDC pool address as the identifier
-        let new_apt_data = if !pool_volumes.is_empty() {
-            vec![NewAptData {
-                pool: APT_USDC_POOL_ADDRESS.to_string(), // Use APT/USDC pool address as the identifier
-                apt_volume_24h: if aggregated_apt_volume.is_zero() { None } else { Some(aggregated_apt_volume.clone()) },
-                usdc_volume_24h: if aggregated_usdc_volume.is_zero() { None } else { Some(aggregated_usdc_volume.clone()) },
-                usdt_volume_24h: if aggregated_usdt_volume.is_zero() { None } else { Some(aggregated_usdt_volume.clone()) },
-                apt_fee_24h: if aggregated_apt_fee.is_zero() { None } else { Some(aggregated_apt_fee.clone()) },
-                usdc_fee_24h: if aggregated_usdc_fee.is_zero() { None } else { Some(aggregated_usdc_fee.clone()) },
-                usdt_fee_24h: if aggregated_usdt_fee.is_zero() { None } else { Some(aggregated_usdt_fee.clone()) },
-            }]
-        } else {
-            vec![]
-        };
+        // Always create a record to ensure reset logic works properly
+        let new_apt_data = vec![NewAptData {
+            pool: APT_USDC_POOL_ADDRESS.to_string(), // Use APT/USDC pool address as the identifier
+            apt_volume_24h: Some(aggregated_apt_volume.clone()),
+            usdc_volume_24h: Some(aggregated_usdc_volume.clone()),
+            usdt_volume_24h: Some(aggregated_usdt_volume.clone()),
+            apt_fee_24h: Some(aggregated_apt_fee.clone()),
+            usdc_fee_24h: Some(aggregated_usdc_fee.clone()),
+            usdt_fee_24h: Some(aggregated_usdt_fee.clone()),
+        }];
 
         info!("✅ Volume Calculator processed {} pools in this batch", pool_volumes.len());
         
