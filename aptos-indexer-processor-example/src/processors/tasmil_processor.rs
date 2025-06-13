@@ -45,9 +45,13 @@ impl TasmilProcessor {
                         apt_data::apt_volume_24h.eq(Some(BigDecimal::zero())),
                         apt_data::usdc_volume_24h.eq(Some(BigDecimal::zero())),
                         apt_data::usdt_volume_24h.eq(Some(BigDecimal::zero())),
+                        apt_data::stapt_volume_24h.eq(Some(BigDecimal::zero())),
+                        apt_data::abtc_volume_24h.eq(Some(BigDecimal::zero())),
                         apt_data::apt_fee_24h.eq(Some(BigDecimal::zero())),
                         apt_data::usdc_fee_24h.eq(Some(BigDecimal::zero())),
                         apt_data::usdt_fee_24h.eq(Some(BigDecimal::zero())),
+                        apt_data::stapt_fee_24h.eq(Some(BigDecimal::zero())),
+                        apt_data::abtc_fee_24h.eq(Some(BigDecimal::zero())),
                         apt_data::inserted_at.eq(diesel::dsl::now)
                     ))
                     .execute(&mut conn)
@@ -66,7 +70,7 @@ impl TasmilProcessor {
         processor
     }
 
-    async fn get_current_volumes(&self, pool_address: &str) -> Result<(BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal), ProcessorError> {
+    async fn get_current_volumes(&self, protocol_name: &str) -> Result<(BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal), ProcessorError> {
         let mut conn = self.connection_pool.get().await.map_err(|e| {
             ProcessorError::ProcessError {
                 message: format!("Failed to get database connection: {}", e),
@@ -74,7 +78,7 @@ impl TasmilProcessor {
         })?;
 
         let current_data: Option<AptData> = apt_data::table
-            .filter(apt_data::pool.eq(pool_address))
+            .filter(apt_data::protocol_name.eq(protocol_name))
             .first(&mut conn)
             .await
             .optional()
@@ -90,19 +94,23 @@ impl TasmilProcessor {
                 let current_apt_volume = data.apt_volume_24h.unwrap_or_else(|| zero_decimal.clone());
                 let current_usdc_volume = data.usdc_volume_24h.unwrap_or_else(|| zero_decimal.clone());
                 let current_usdt_volume = data.usdt_volume_24h.unwrap_or_else(|| zero_decimal.clone());
+                let current_stapt_volume = data.stapt_volume_24h.unwrap_or_else(|| zero_decimal.clone());
+                let current_abtc_volume = data.abtc_volume_24h.unwrap_or_else(|| zero_decimal.clone());
                 let current_apt_fee = data.apt_fee_24h.unwrap_or_else(|| zero_decimal.clone());
                 let current_usdc_fee = data.usdc_fee_24h.unwrap_or_else(|| zero_decimal.clone());
                 let current_usdt_fee = data.usdt_fee_24h.unwrap_or_else(|| zero_decimal.clone());
+                let current_stapt_fee = data.stapt_fee_24h.unwrap_or_else(|| zero_decimal.clone());
+                let current_abtc_fee = data.abtc_fee_24h.unwrap_or_else(|| zero_decimal.clone());
                 
-                debug!("📊 Current volumes for {}: APT={}, USDC={}, USDT={}, APT_fee={}, USDC_fee={}, USDT_fee={}", 
-                    pool_address, current_apt_volume, current_usdc_volume, current_usdt_volume,
-                    current_apt_fee, current_usdc_fee, current_usdt_fee);
+                debug!("📊 Current volumes for {}: APT={}, USDC={}, USDT={}, stAPT={}, aBTC={}, APT_fee={}, USDC_fee={}, USDT_fee={}, stAPT_fee={}, aBTC_fee={}", 
+                    protocol_name, current_apt_volume, current_usdc_volume, current_usdt_volume, current_stapt_volume, current_abtc_volume,
+                    current_apt_fee, current_usdc_fee, current_usdt_fee, current_stapt_fee, current_abtc_fee);
                     
-                Ok((current_apt_volume, current_usdc_volume, current_usdt_volume, current_apt_fee, current_usdc_fee, current_usdt_fee))
+                Ok((current_apt_volume, current_usdc_volume, current_usdt_volume, current_stapt_volume, current_abtc_volume, current_apt_fee, current_usdc_fee, current_usdt_fee, current_stapt_fee, current_abtc_fee))
             },
             None => {
-                debug!("📊 No existing data for pool {}, starting from zero", pool_address);
-                Ok((zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal))
+                debug!("📊 No existing data for protocol {}, starting from zero", protocol_name);
+                Ok((zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal.clone(), zero_decimal))
             }
         }
     }
@@ -124,59 +132,79 @@ impl TasmilProcessor {
             let batch_apt_volume = record.apt_volume_24h.as_ref().unwrap_or(&zero_decimal);
             let batch_usdc_volume = record.usdc_volume_24h.as_ref().unwrap_or(&zero_decimal);
             let batch_usdt_volume = record.usdt_volume_24h.as_ref().unwrap_or(&zero_decimal);
+            let batch_stapt_volume = record.stapt_volume_24h.as_ref().unwrap_or(&zero_decimal);
+            let batch_abtc_volume = record.abtc_volume_24h.as_ref().unwrap_or(&zero_decimal);
             let batch_apt_fee = record.apt_fee_24h.as_ref().unwrap_or(&zero_decimal);
             let batch_usdc_fee = record.usdc_fee_24h.as_ref().unwrap_or(&zero_decimal);
             let batch_usdt_fee = record.usdt_fee_24h.as_ref().unwrap_or(&zero_decimal);
+            let batch_stapt_fee = record.stapt_fee_24h.as_ref().unwrap_or(&zero_decimal);
+            let batch_abtc_fee = record.abtc_fee_24h.as_ref().unwrap_or(&zero_decimal);
             
             // Get current volumes and fees first
-            let (current_apt_volume, current_usdc_volume, current_usdt_volume, current_apt_fee, current_usdc_fee, current_usdt_fee) = 
-                self.get_current_volumes(&record.pool).await?;
+            let (current_apt_volume, current_usdc_volume, current_usdt_volume, current_stapt_volume, current_abtc_volume, current_apt_fee, current_usdc_fee, current_usdt_fee, current_stapt_fee, current_abtc_fee) = 
+                self.get_current_volumes(&record.protocol_name).await?;
             
             // Accumulate both volumes and fees
             let new_apt_volume = &current_apt_volume + batch_apt_volume;
             let new_usdc_volume = &current_usdc_volume + batch_usdc_volume;
             let new_usdt_volume = &current_usdt_volume + batch_usdt_volume;
+            let new_stapt_volume = &current_stapt_volume + batch_stapt_volume;
+            let new_abtc_volume = &current_abtc_volume + batch_abtc_volume;
             let new_apt_fee = &current_apt_fee + batch_apt_fee;
             let new_usdc_fee = &current_usdc_fee + batch_usdc_fee;
             let new_usdt_fee = &current_usdt_fee + batch_usdt_fee;
+            let new_stapt_fee = &current_stapt_fee + batch_stapt_fee;
+            let new_abtc_fee = &current_abtc_fee + batch_abtc_fee;
             
-            // UPSERT: INSERT or UPDATE if pool exists
+            // UPSERT: INSERT or UPDATE if protocol exists
             match diesel::insert_into(apt_data::table)
                 .values(&NewAptData {
-                    pool: record.pool.clone(),
+                    protocol_name: record.protocol_name.clone(),
                     apt_volume_24h: Some(new_apt_volume.clone()),
                     usdc_volume_24h: Some(new_usdc_volume.clone()),
                     usdt_volume_24h: Some(new_usdt_volume.clone()),
+                    stapt_volume_24h: Some(new_stapt_volume.clone()),
+                    abtc_volume_24h: Some(new_abtc_volume.clone()),
                     apt_fee_24h: Some(new_apt_fee.clone()),
                     usdc_fee_24h: Some(new_usdc_fee.clone()),
                     usdt_fee_24h: Some(new_usdt_fee.clone()),
+                    stapt_fee_24h: Some(new_stapt_fee.clone()),
+                    abtc_fee_24h: Some(new_abtc_fee.clone()),
                 })
-                .on_conflict(apt_data::pool)
+                .on_conflict(apt_data::protocol_name)
                 .do_update()
                 .set((
                     apt_data::apt_volume_24h.eq(excluded(apt_data::apt_volume_24h)),
                     apt_data::usdc_volume_24h.eq(excluded(apt_data::usdc_volume_24h)),
                     apt_data::usdt_volume_24h.eq(excluded(apt_data::usdt_volume_24h)),
+                    apt_data::stapt_volume_24h.eq(excluded(apt_data::stapt_volume_24h)),
+                    apt_data::abtc_volume_24h.eq(excluded(apt_data::abtc_volume_24h)),
                     apt_data::apt_fee_24h.eq(excluded(apt_data::apt_fee_24h)),
                     apt_data::usdc_fee_24h.eq(excluded(apt_data::usdc_fee_24h)),
                     apt_data::usdt_fee_24h.eq(excluded(apt_data::usdt_fee_24h)),
+                    apt_data::stapt_fee_24h.eq(excluded(apt_data::stapt_fee_24h)),
+                    apt_data::abtc_fee_24h.eq(excluded(apt_data::abtc_fee_24h)),
                     apt_data::inserted_at.eq(diesel::dsl::now)
                 ))
                 .execute(&mut conn)
                 .await
             {
                 Ok(_) => {
-                    info!("✅ Updated rolling data for pool {}: APT vol +{} (total: {}), USDC vol +{} (total: {}), USDT vol +{} (total: {}), APT fee +{} (total: {}), USDC fee +{} (total: {}), USDT fee +{} (total: {})", 
-                        record.pool, 
+                    info!("✅ Updated rolling data for protocol {}: APT vol +{} (total: {}), USDC vol +{} (total: {}), USDT vol +{} (total: {}), stAPT vol +{} (total: {}), aBTC vol +{} (total: {}), APT fee +{} (total: {}), USDC fee +{} (total: {}), USDT fee +{} (total: {}), stAPT fee +{} (total: {}), aBTC fee +{} (total: {})", 
+                        record.protocol_name, 
                         batch_apt_volume, new_apt_volume, 
                         batch_usdc_volume, new_usdc_volume,
                         batch_usdt_volume, new_usdt_volume,
+                        batch_stapt_volume, new_stapt_volume,
+                        batch_abtc_volume, new_abtc_volume,
                         batch_apt_fee, new_apt_fee,
                         batch_usdc_fee, new_usdc_fee,
-                        batch_usdt_fee, new_usdt_fee);
+                        batch_usdt_fee, new_usdt_fee,
+                        batch_stapt_fee, new_stapt_fee,
+                        batch_abtc_fee, new_abtc_fee);
                 },
                 Err(e) => {
-                    error!("❌ Failed to update data for pool {}: {}", record.pool, e);
+                    error!("❌ Failed to update data for protocol {}: {}", record.protocol_name, e);
                     return Err(ProcessorError::ProcessError {
                         message: format!("Data update failed: {}", e),
                     });
@@ -235,9 +263,13 @@ impl TasmilProcessor {
                         apt_data::apt_volume_24h.eq(Some(BigDecimal::zero())),
                         apt_data::usdc_volume_24h.eq(Some(BigDecimal::zero())),
                         apt_data::usdt_volume_24h.eq(Some(BigDecimal::zero())),
+                        apt_data::stapt_volume_24h.eq(Some(BigDecimal::zero())),
+                        apt_data::abtc_volume_24h.eq(Some(BigDecimal::zero())),
                         apt_data::apt_fee_24h.eq(Some(BigDecimal::zero())),
                         apt_data::usdc_fee_24h.eq(Some(BigDecimal::zero())),
                         apt_data::usdt_fee_24h.eq(Some(BigDecimal::zero())),
+                        apt_data::stapt_fee_24h.eq(Some(BigDecimal::zero())),
+                        apt_data::abtc_fee_24h.eq(Some(BigDecimal::zero())),
                         apt_data::inserted_at.eq(diesel::dsl::now)
                     ))
                     .execute(&mut conn)

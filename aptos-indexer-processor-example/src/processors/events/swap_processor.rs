@@ -20,14 +20,14 @@ use aptos_indexer_processor_sdk::{
 use std::sync::mpsc;
 use tracing::{info, warn};
 
-pub struct CellanaProcessor {
+pub struct SwapProcessor {
     pub config: IndexerProcessorConfig,
     pub db_pool: ArcDbPool,
 }
 
-impl CellanaProcessor {
+impl SwapProcessor {
     pub async fn new(config: IndexerProcessorConfig) -> Result<Self> {
-        info!("🚀 Initializing CellanaProcessor");
+        info!("🚀 Initializing SwapProcessor for Cellana and Thala");
         info!("📊 Processor type: {}", config.processor_config.name());
         
         let conn_pool = new_db_pool(
@@ -46,7 +46,7 @@ impl CellanaProcessor {
     }
 
     pub async fn run_processor(self) -> Result<()> {
-        info!("▶️ Starting CellanaProcessor");
+        info!("▶️ Starting SwapProcessor for multi-protocol indexing");
         
         // Run migrations
         info!("🔄 Running database migrations");
@@ -84,7 +84,7 @@ impl CellanaProcessor {
         let (notification_sender, notification_receiver) = mpsc::channel();
 
         // Create TasmilProcessor
-        info!("🔧 Setting up TasmilProcessor");
+        info!("🔧 Setting up TasmilProcessor for Cellana and Thala");
         let tasmil_processor = TasmilProcessor::new(self.db_pool.clone(), notification_sender);
         
         let version_tracker = VersionTrackerStep::new(

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::processor_config::ProcessorConfig;
-use crate::processors::events::cellana_processor::CellanaProcessor;
+use crate::processors::events::swap_processor::SwapProcessor;
 use anyhow::Result;
 use aptos_indexer_processor_sdk::aptos_indexer_transaction_stream::TransactionStreamConfig;
 use aptos_indexer_processor_sdk_server_framework::RunnableConfig;
@@ -24,9 +24,9 @@ pub struct IndexerProcessorConfig {
 impl RunnableConfig for IndexerProcessorConfig {
     async fn run(&self) -> Result<()> {
         match self.processor_config {
-            ProcessorConfig::CellanaProcessor => {
-                let cellana_processor = CellanaProcessor::new(self.clone()).await?;
-                cellana_processor.run_processor().await
+            ProcessorConfig::SwapProcessor => {
+                let swap_processor = SwapProcessor::new(self.clone()).await?;
+                swap_processor.run_processor().await
             },
         }
     }

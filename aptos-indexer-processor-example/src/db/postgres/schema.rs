@@ -1,8 +1,8 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    apt_data (pool) {
-        pool -> Varchar,
+    apt_data (protocol_name) {
+        protocol_name -> Varchar,
         inserted_at -> Timestamp,
         apt_volume_24h -> Nullable<Numeric>,
         usdc_volume_24h -> Nullable<Numeric>,
@@ -10,6 +10,10 @@ diesel::table! {
         usdc_fee_24h -> Nullable<Numeric>,
         usdt_volume_24h -> Nullable<Numeric>,
         usdt_fee_24h -> Nullable<Numeric>,
+        stapt_volume_24h -> Nullable<Numeric>,
+        stapt_fee_24h -> Nullable<Numeric>,
+        abtc_volume_24h -> Nullable<Numeric>,
+        abtc_fee_24h -> Nullable<Numeric>,
     }
 }
 
