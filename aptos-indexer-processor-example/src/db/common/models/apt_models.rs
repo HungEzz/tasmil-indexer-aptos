@@ -20,10 +20,6 @@ pub struct AptData {
     pub usdc_fee_24h: Option<BigDecimal>,
     pub usdt_volume_24h: Option<BigDecimal>,
     pub usdt_fee_24h: Option<BigDecimal>,
-    pub stapt_volume_24h: Option<BigDecimal>,
-    pub stapt_fee_24h: Option<BigDecimal>,
-    pub abtc_volume_24h: Option<BigDecimal>,
-    pub abtc_fee_24h: Option<BigDecimal>,
     pub weth_volume_24h: Option<BigDecimal>,
     pub weth_fee_24h: Option<BigDecimal>,
 }
@@ -38,10 +34,6 @@ pub struct NewAptData {
     pub usdc_fee_24h: Option<BigDecimal>,
     pub usdt_volume_24h: Option<BigDecimal>,
     pub usdt_fee_24h: Option<BigDecimal>,
-    pub stapt_volume_24h: Option<BigDecimal>,
-    pub stapt_fee_24h: Option<BigDecimal>,
-    pub abtc_volume_24h: Option<BigDecimal>,
-    pub abtc_fee_24h: Option<BigDecimal>,
     pub weth_volume_24h: Option<BigDecimal>,
     pub weth_fee_24h: Option<BigDecimal>,
 }

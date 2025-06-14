@@ -24,13 +24,9 @@ pub struct PoolVolume {
     pub apt_volume_24h: BigDecimal,
     pub usdc_volume_24h: BigDecimal,
     pub usdt_volume_24h: BigDecimal,
-    pub stapt_volume_24h: BigDecimal,
-    pub abtc_volume_24h: BigDecimal,
     pub apt_fee_24h: BigDecimal,
     pub usdc_fee_24h: BigDecimal,
     pub usdt_fee_24h: BigDecimal,
-    pub stapt_fee_24h: BigDecimal,
-    pub abtc_fee_24h: BigDecimal,
 }
 
 // Cached decimal divisors for performance
@@ -38,8 +34,6 @@ struct DecimalDivisors {
     apt: BigDecimal,
     usdc: BigDecimal,
     usdt: BigDecimal,
-    stapt: BigDecimal,
-    abtc: BigDecimal,
 }
 
 impl DecimalDivisors {
@@ -48,8 +42,6 @@ impl DecimalDivisors {
             apt: BigDecimal::from_u64(10_u64.pow(APT_DECIMALS as u32)).unwrap(),
             usdc: BigDecimal::from_u64(10_u64.pow(USDC_DECIMALS as u32)).unwrap(),
             usdt: BigDecimal::from_u64(10_u64.pow(USDT_DECIMALS as u32)).unwrap(),
-            stapt: BigDecimal::from_u64(10_u64.pow(STAPT_DECIMALS as u32)).unwrap(),
-            abtc: BigDecimal::from_u64(10_u64.pow(ABTC_DECIMALS as u32)).unwrap(),
         }
     }
 }
@@ -59,8 +51,6 @@ pub const TARGET_POOLS: &[&str] = &[
     APT_USDC_POOL_ADDRESS,
     USDT_USDC_POOL_ADDRESS,
     APT_USDT_POOL_ADDRESS,
-    APT_STAPT_POOL_ADDRESS,
-    ABTC_APT_POOL_ADDRESS,
 ];
 
 impl Default for PoolVolume {
@@ -70,13 +60,9 @@ impl Default for PoolVolume {
             apt_volume_24h: BigDecimal::from(0),
             usdc_volume_24h: BigDecimal::from(0),
             usdt_volume_24h: BigDecimal::from(0),
-            stapt_volume_24h: BigDecimal::from(0),
-            abtc_volume_24h: BigDecimal::from(0),
             apt_fee_24h: BigDecimal::from(0),
             usdc_fee_24h: BigDecimal::from(0),
             usdt_fee_24h: BigDecimal::from(0),
-            stapt_fee_24h: BigDecimal::from(0),
-            abtc_fee_24h: BigDecimal::from(0),
         }
     }
 }
@@ -193,14 +179,6 @@ impl CellanaProcessor {
         else if swap_data.pool == APT_USDT_POOL_ADDRESS {
             self.process_apt_usdt_swap(pool_entry, &swap_data, &raw_amount_in, &raw_amount_out, &fee_rate).await;
         }
-        // Handle APT/stAPT pool swaps
-        else if swap_data.pool == APT_STAPT_POOL_ADDRESS {
-            self.process_apt_stapt_swap(pool_entry, &swap_data, &raw_amount_in, &raw_amount_out, &fee_rate).await;
-        }
-        // Handle aBTC/APT pool swaps
-        else if swap_data.pool == ABTC_APT_POOL_ADDRESS {
-            self.process_abtc_apt_swap(pool_entry, &swap_data, &raw_amount_in, &raw_amount_out, &fee_rate).await;
-        }
     }
 
     async fn process_apt_usdc_swap(
@@ -314,82 +292,6 @@ impl CellanaProcessor {
             
             info!("📉 Cellana USDT->APT: {} USDT sold, {} APT bought, {} USDT fee ({}bps)", 
                 usdt_amount, apt_amount, usdt_fee, swap_data.swap_fee_bps);
-        }
-    }
-
-    async fn process_apt_stapt_swap(
-        &self,
-        pool_entry: &mut PoolVolume,
-        swap_data: &SwapData,
-        raw_amount_in: &BigDecimal,
-        raw_amount_out: &BigDecimal,
-        fee_rate: &BigDecimal,
-    ) {
-        if swap_data.from_token == APT_COIN_TYPE && swap_data.to_token == STAPT_COIN_TYPE {
-            // APT -> stAPT
-            let apt_amount = raw_amount_in / &self.divisors.apt;
-            let stapt_amount = raw_amount_out / &self.divisors.stapt;
-            let apt_fee = &apt_amount * fee_rate;
-            let apt_net_volume = &apt_amount - &apt_fee;
-            
-            pool_entry.apt_volume_24h += apt_net_volume.clone();
-            pool_entry.stapt_volume_24h += stapt_amount.clone();
-            pool_entry.apt_fee_24h += apt_fee.clone();
-            
-            info!("📉 Cellana APT->stAPT: {} APT sold, {} stAPT bought, {} APT fee ({}bps)", 
-                apt_amount, stapt_amount, apt_fee, swap_data.swap_fee_bps);
-                
-        } else if swap_data.from_token == STAPT_COIN_TYPE && swap_data.to_token == APT_COIN_TYPE {
-            // stAPT -> APT
-            let stapt_amount = raw_amount_in / &self.divisors.stapt;
-            let apt_amount = raw_amount_out / &self.divisors.apt;
-            let stapt_fee = &stapt_amount * fee_rate;
-            let stapt_net_volume = &stapt_amount - &stapt_fee;
-            
-            pool_entry.apt_volume_24h += apt_amount.clone();
-            pool_entry.stapt_volume_24h += stapt_net_volume.clone();
-            pool_entry.stapt_fee_24h += stapt_fee.clone();
-            
-            info!("📉 Cellana stAPT->APT: {} stAPT sold, {} APT bought, {} stAPT fee ({}bps)", 
-                stapt_amount, apt_amount, stapt_fee, swap_data.swap_fee_bps);
-        }
-    }
-
-    async fn process_abtc_apt_swap(
-        &self,
-        pool_entry: &mut PoolVolume,
-        swap_data: &SwapData,
-        raw_amount_in: &BigDecimal,
-        raw_amount_out: &BigDecimal,
-        fee_rate: &BigDecimal,
-    ) {
-        if swap_data.from_token == ABTC_COIN_TYPE && swap_data.to_token == APT_COIN_TYPE {
-            // aBTC -> APT
-            let abtc_amount = raw_amount_in / &self.divisors.abtc;
-            let apt_amount = raw_amount_out / &self.divisors.apt;
-            let abtc_fee = &abtc_amount * fee_rate;
-            let abtc_net_volume = &abtc_amount - &abtc_fee;
-            
-            pool_entry.abtc_volume_24h += abtc_net_volume.clone();
-            pool_entry.apt_volume_24h += apt_amount.clone();
-            pool_entry.abtc_fee_24h += abtc_fee.clone();
-            
-            info!("📉 Cellana aBTC->APT: {} aBTC sold, {} APT bought, {} aBTC fee ({}bps)", 
-                abtc_amount, apt_amount, abtc_fee, swap_data.swap_fee_bps);
-                
-        } else if swap_data.from_token == APT_COIN_TYPE && swap_data.to_token == ABTC_COIN_TYPE {
-            // APT -> aBTC
-            let apt_amount = raw_amount_in / &self.divisors.apt;
-            let abtc_amount = raw_amount_out / &self.divisors.abtc;
-            let apt_fee = &apt_amount * fee_rate;
-            let apt_net_volume = &apt_amount - &apt_fee;
-            
-            pool_entry.apt_volume_24h += apt_net_volume.clone();
-            pool_entry.abtc_volume_24h += abtc_amount.clone();
-            pool_entry.apt_fee_24h += apt_fee.clone();
-            
-            info!("📈 Cellana APT->aBTC: {} APT sold, {} aBTC bought, {} APT fee ({}bps)", 
-                apt_amount, abtc_amount, apt_fee, swap_data.swap_fee_bps);
         }
     }
 

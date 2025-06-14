@@ -171,7 +171,11 @@ impl SushiSwapProcessor {
         let is_izweth_izusdc = (token_x == IZWETH_COIN_TYPE && token_y == IZUSDC_COIN_TYPE) ||
                               (token_x == IZUSDC_COIN_TYPE && token_y == IZWETH_COIN_TYPE);
         
-        is_apt_izusdt || is_apt_izusdc || is_apt_whusdc || is_apt_izweth || is_izweth_izusdc
+        // Check if this is whUSDC/izUSDC pair (in either order)
+        let is_whusdc_izusdc = (token_x == WHUSDC_COIN_TYPE && token_y == IZUSDC_COIN_TYPE) ||
+                              (token_x == IZUSDC_COIN_TYPE && token_y == WHUSDC_COIN_TYPE);
+        
+        is_apt_izusdt || is_apt_izusdc || is_apt_whusdc || is_apt_izweth || is_izweth_izusdc || is_whusdc_izusdc
     }
 
     pub async fn process_sushiswap(&self, pool_volumes: &mut HashMap<String, SushiPoolVolume>, swap_data: SushiSwapData) {
@@ -197,6 +201,9 @@ impl SushiSwapProcessor {
         } else if (swap_data.token_x == IZWETH_COIN_TYPE && swap_data.token_y == IZUSDC_COIN_TYPE) ||
                   (swap_data.token_x == IZUSDC_COIN_TYPE && swap_data.token_y == IZWETH_COIN_TYPE) {
             "WETH/USDC".to_string()  // izWETH/izUSDC pair
+        } else if (swap_data.token_x == WHUSDC_COIN_TYPE && swap_data.token_y == IZUSDC_COIN_TYPE) ||
+                  (swap_data.token_x == IZUSDC_COIN_TYPE && swap_data.token_y == WHUSDC_COIN_TYPE) {
+            "whUSDC/izUSDC".to_string()  // whUSDC/izUSDC pair - both stored as USDC
         } else {
             return; // Shouldn't happen due to is_supported_pair check
         };
@@ -246,6 +253,12 @@ impl SushiSwapProcessor {
         } else if swap_data.token_x == IZUSDC_COIN_TYPE && swap_data.token_y == IZWETH_COIN_TYPE {
             // Token X = izUSDC, Token Y = izWETH (swapped order)
             self.process_izusdc_izweth_sushiswap(pool_entry, &amount_x_in, &amount_x_out, &amount_y_in, &amount_y_out).await;
+        } else if swap_data.token_x == WHUSDC_COIN_TYPE && swap_data.token_y == IZUSDC_COIN_TYPE {
+            // Token X = whUSDC, Token Y = izUSDC (both stored as USDC)
+            self.process_whusdc_izusdc_sushiswap(pool_entry, &amount_x_in, &amount_x_out, &amount_y_in, &amount_y_out).await;
+        } else if swap_data.token_x == IZUSDC_COIN_TYPE && swap_data.token_y == WHUSDC_COIN_TYPE {
+            // Token X = izUSDC, Token Y = whUSDC (swapped order, both stored as USDC)
+            self.process_izusdc_whusdc_sushiswap(pool_entry, &amount_x_in, &amount_x_out, &amount_y_in, &amount_y_out).await;
         }
     }
 
@@ -570,6 +583,78 @@ impl SushiSwapProcessor {
             
             info!("📈 SushiSwap izUSDC→izWETH: {} izUSDC sold, {} izWETH received", 
                 izusdc_amount, izweth_amount);
+        }
+    }
+
+    /// Process whUSDC/izUSDC swap where Token X = whUSDC, Token Y = izUSDC
+    async fn process_whusdc_izusdc_sushiswap(
+        &self,
+        pool_entry: &mut SushiPoolVolume,
+        amount_x_in: &BigDecimal,
+        amount_x_out: &BigDecimal,
+        amount_y_in: &BigDecimal,
+        amount_y_out: &BigDecimal,
+    ) {
+        // Determine swap direction based on non-zero amounts
+        if amount_x_in > &BigDecimal::zero() && amount_y_out > &BigDecimal::zero() {
+            // whUSDC → izUSDC: User sells whUSDC (X) and receives izUSDC (Y)
+            let whusdc_amount = amount_x_in / &self.divisors.usdc;
+            let izusdc_amount = amount_y_out / &self.divisors.usdc;
+            
+            // Count BOTH tokens as USDC volume since both are USDC variants
+            pool_entry.usdc_volume_24h += &whusdc_amount;  // whUSDC as USDC
+            pool_entry.usdc_volume_24h += &izusdc_amount;  // izUSDC as USDC
+            
+            info!("📉 SushiSwap whUSDC→izUSDC: {} whUSDC sold, {} izUSDC received", 
+                whusdc_amount, izusdc_amount);
+                
+        } else if amount_y_in > &BigDecimal::zero() && amount_x_out > &BigDecimal::zero() {
+            // izUSDC → whUSDC: User sells izUSDC (Y) and receives whUSDC (X)
+            let izusdc_amount = amount_y_in / &self.divisors.usdc;
+            let whusdc_amount = amount_x_out / &self.divisors.usdc;
+            
+            // Count BOTH tokens as USDC volume since both are USDC variants
+            pool_entry.usdc_volume_24h += &izusdc_amount;  // izUSDC as USDC
+            pool_entry.usdc_volume_24h += &whusdc_amount;  // whUSDC as USDC
+            
+            info!("📈 SushiSwap izUSDC→whUSDC: {} izUSDC sold, {} whUSDC received", 
+                izusdc_amount, whusdc_amount);
+        }
+    }
+
+    /// Process izUSDC/whUSDC swap where Token X = izUSDC, Token Y = whUSDC
+    async fn process_izusdc_whusdc_sushiswap(
+        &self,
+        pool_entry: &mut SushiPoolVolume,
+        amount_x_in: &BigDecimal,
+        amount_x_out: &BigDecimal,
+        amount_y_in: &BigDecimal,
+        amount_y_out: &BigDecimal,
+    ) {
+        // Determine swap direction based on non-zero amounts
+        if amount_x_in > &BigDecimal::zero() && amount_y_out > &BigDecimal::zero() {
+            // izUSDC → whUSDC: User sells izUSDC (X) and receives whUSDC (Y)
+            let izusdc_amount = amount_x_in / &self.divisors.usdc;
+            let whusdc_amount = amount_y_out / &self.divisors.usdc;
+            
+            // Count BOTH tokens as USDC volume since both are USDC variants
+            pool_entry.usdc_volume_24h += &izusdc_amount;  // izUSDC as USDC
+            pool_entry.usdc_volume_24h += &whusdc_amount;  // whUSDC as USDC
+            
+            info!("📉 SushiSwap izUSDC→whUSDC: {} izUSDC sold, {} whUSDC received", 
+                izusdc_amount, whusdc_amount);
+                
+        } else if amount_y_in > &BigDecimal::zero() && amount_x_out > &BigDecimal::zero() {
+            // whUSDC → izUSDC: User sells whUSDC (Y) and receives izUSDC (X)
+            let whusdc_amount = amount_y_in / &self.divisors.usdc;
+            let izusdc_amount = amount_x_out / &self.divisors.usdc;
+            
+            // Count BOTH tokens as USDC volume since both are USDC variants
+            pool_entry.usdc_volume_24h += &whusdc_amount;  // whUSDC as USDC
+            pool_entry.usdc_volume_24h += &izusdc_amount;  // izUSDC as USDC
+            
+            info!("📈 SushiSwap whUSDC→izUSDC: {} whUSDC sold, {} izUSDC received", 
+                whusdc_amount, izusdc_amount);
         }
     }
 
