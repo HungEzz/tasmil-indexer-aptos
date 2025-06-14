@@ -16,10 +16,12 @@ use tracing::{info, debug};
 // Import the new modular processors
 use super::cellana::{CellanaProcessor, constants::CELLANA_SWAP_EVENT_TYPE};
 use super::thala::{ThalaProcessor, constants::THALA_SWAP_EVENT_TYPE};
+use super::sushiswap::SushiSwapProcessor;
 
 // Re-export the processor types for internal use
 pub use super::cellana::processor::PoolVolume as CellanaPoolVolume;
 pub use super::thala::processor::PoolVolume as ThalaPoolVolume;
+pub use super::sushiswap::processor::SushiPoolVolume;
 
 // Helper function to check if a transaction is within the last 24 hours
 fn is_within_24h(txn_timestamp_seconds: i64) -> bool {
@@ -35,15 +37,17 @@ fn is_within_24h(txn_timestamp_seconds: i64) -> bool {
 pub struct VolumeCalculator {
     cellana_processor: CellanaProcessor,
     thala_processor: ThalaProcessor,
+    sushi_swap_processor: SushiSwapProcessor,
 }
 
 impl VolumeCalculator {
     pub fn new() -> Self {
         info!("🚀 Initializing VolumeCalculator with modular architecture");
-        info!("📊 Configured for Cellana and Thala APT/USDC, USDT/USDC, and APT/USDT pool volume tracking");
+        info!("📊 Configured for Cellana, Thala, and SushiSwap volume tracking");
         Self {
             cellana_processor: CellanaProcessor::new(),
             thala_processor: ThalaProcessor::new(),
+            sushi_swap_processor: SushiSwapProcessor::new(),
         }
     }
 }
@@ -60,8 +64,10 @@ impl Processable for VolumeCalculator {
     ) -> Result<Option<TransactionContext<Vec<NewAptData>>>, ProcessorError> {
         let transactions = item.data;
         info!("---------------------    ");
+
         info!("🔄 Processing batch of {:?} transactions", transactions);
         info!("---------------------    ");
+        
         if transactions.is_empty() {
             debug!("📭 No transactions to process");
             return Ok(Some(TransactionContext {
@@ -70,11 +76,10 @@ impl Processable for VolumeCalculator {
             }));
         }
 
-        info!("🔄 Processing batch of {} transactions", transactions.len());
-        
         // Track all pool volumes by protocol and pool
         let mut cellana_volumes: HashMap<String, CellanaPoolVolume> = HashMap::new();
         let mut thala_volumes: HashMap<String, ThalaPoolVolume> = HashMap::new();
+        let mut sushi_volumes: HashMap<String, SushiPoolVolume> = HashMap::new();
 
         for txn in &transactions {
             // Skip transactions not within 24h
@@ -86,8 +91,22 @@ impl Processable for VolumeCalculator {
                 for event in &user_txn.events {
                     let event_type = &event.type_str;
                     
+                    // Log ALL events to help debug SushiSwap detection
+                    tracing::info!("🔍 Processing event: {}", event_type);
+                    
+                    // Add debug logging for all events
+                    if event_type.contains("swap") || event_type.contains("Swap") {
+                        tracing::info!("🎯 Found swap event: {}", event_type);
+                    }
+                    
+                    // Check specifically for SushiSwap patterns
+                    if event_type.contains("31a6675cbe84365bf2b0cbce617ece6c47023ef70826533bde5203d32171dc3c") {
+                        tracing::info!("🍣 Found event matching SushiSwap contract: {}", event_type);
+                    }
+                    
                     // Process Cellana events
                     if event_type == CELLANA_SWAP_EVENT_TYPE {
+                        tracing::debug!("🟢 Processing Cellana event: {}", event_type);
                         if let Ok(event_data) = serde_json::from_str::<serde_json::Value>(&event.data) {
                             if let Ok(mut swap_data) = self.cellana_processor.extract_swap_data(&event_data) {
                                 // Fill fee information
@@ -103,6 +122,7 @@ impl Processable for VolumeCalculator {
                     
                     // Process Thala events
                     else if event_type == THALA_SWAP_EVENT_TYPE {
+                        tracing::debug!("🔵 Processing Thala event: {}", event_type);
                         if let Ok(event_data) = serde_json::from_str::<serde_json::Value>(&event.data) {
                             if let Ok(swap_data) = self.thala_processor.extract_swap_data(&event_data) {
                                 // Only process swaps from our target pools
@@ -110,6 +130,30 @@ impl Processable for VolumeCalculator {
                                     self.thala_processor.process_swap(&mut thala_volumes, swap_data).await;
                                 }
                             }
+                        }
+                    }
+                    
+                    // Process SushiSwap events
+                    else if self.sushi_swap_processor.is_sushiswap_event(event_type) {
+                        tracing::info!("🟠 FOUND SUSHISWAP EVENT: {}", event_type);
+                        
+                        if let Ok(event_data) = serde_json::from_str::<serde_json::Value>(&event.data) {
+                            match self.sushi_swap_processor.extract_sushiswap_data(&event_data, event_type) {
+                                Ok(swap_data) => {
+                                    tracing::info!("🔄 Processing SushiSwap swap: {:?}", swap_data);
+                                    self.sushi_swap_processor.process_sushiswap(&mut sushi_volumes, swap_data).await;
+                                    tracing::info!("✅ SushiSwap swap processed successfully");
+                                }
+                                Err(e) => {
+                                    tracing::error!("❌ Error extracting SushiSwap data: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        // Log non-matching events to help debug
+                        if event_type.contains("swap") || event_type.contains("Swap") {
+                            tracing::info!("❓ Unknown swap event (not Cellana/Thala/SushiSwap): {}", event_type);
                         }
                     }
                 }
@@ -158,11 +202,13 @@ impl Processable for VolumeCalculator {
                 usdt_volume_24h: Some(cellana_total_usdt_volume.clone()),
                 stapt_volume_24h: Some(cellana_total_stapt_volume.clone()),
                 abtc_volume_24h: Some(cellana_total_abtc_volume.clone()),
+                weth_volume_24h: None, // Cellana doesn't support WETH yet
                 apt_fee_24h: Some(cellana_total_apt_fee.clone()),
                 usdc_fee_24h: Some(cellana_total_usdc_fee.clone()),
                 usdt_fee_24h: Some(cellana_total_usdt_fee.clone()),
                 stapt_fee_24h: Some(cellana_total_stapt_fee.clone()),
                 abtc_fee_24h: Some(cellana_total_abtc_fee.clone()),
+                weth_fee_24h: None, // Cellana doesn't support WETH yet
             };
             
             info!("💾 Created Cellana aggregated record: APT={:?}, USDC={:?}, USDT={:?}, stAPT={:?}, aBTC={:?}", 
@@ -202,11 +248,13 @@ impl Processable for VolumeCalculator {
                 usdt_volume_24h: Some(thala_total_usdt_volume.clone()),
                 stapt_volume_24h: Some(thala_total_stapt_volume.clone()),
                 abtc_volume_24h: None, // Thala doesn't support aBTC yet
+                weth_volume_24h: None, // Thala doesn't support WETH yet
                 apt_fee_24h: Some(thala_total_apt_fee.clone()),
                 usdc_fee_24h: Some(thala_total_usdc_fee.clone()),
                 usdt_fee_24h: Some(thala_total_usdt_fee.clone()),
                 stapt_fee_24h: Some(thala_total_stapt_fee.clone()),
                 abtc_fee_24h: None, // Thala doesn't support aBTC yet
+                weth_fee_24h: None, // Thala doesn't support WETH yet
             };
             
             info!("💾 Created Thala aggregated record: APT={:?}, USDC={:?}, USDT={:?}", 
@@ -215,7 +263,48 @@ impl Processable for VolumeCalculator {
             results.push(apt_data);
         }
 
-        info!("✅ Successfully processed {} pools in batch", results.len());
+        // Aggregate SushiSwap volumes across all pools
+        let mut sushi_total_apt_volume = BigDecimal::zero();
+        let mut sushi_total_usdt_volume = BigDecimal::zero();
+        let mut sushi_total_usdc_volume = BigDecimal::zero();
+        let mut sushi_total_weth_volume = BigDecimal::zero();
+
+        for (_, pool_volume) in sushi_volumes {
+            sushi_total_apt_volume += &pool_volume.apt_volume_24h;
+            sushi_total_usdt_volume += &pool_volume.usdt_volume_24h;
+            sushi_total_usdc_volume += &pool_volume.usdc_volume_24h;
+            sushi_total_weth_volume += &pool_volume.weth_volume_24h;
+        }
+
+        // Create SushiSwap result if there's any volume
+        if sushi_total_apt_volume > BigDecimal::zero() || 
+           sushi_total_usdt_volume > BigDecimal::zero() ||
+           sushi_total_usdc_volume > BigDecimal::zero() ||
+           sushi_total_weth_volume > BigDecimal::zero() {
+            
+            let apt_data = NewAptData {
+                protocol_name: "sushiswap".to_string(),
+                apt_volume_24h: Some(sushi_total_apt_volume.clone()),
+                usdc_volume_24h: Some(sushi_total_usdc_volume.clone()),  // Include USDC volume
+                usdt_volume_24h: Some(sushi_total_usdt_volume.clone()),
+                stapt_volume_24h: None, // SushiSwap doesn't trade stAPT
+                abtc_volume_24h: None, // SushiSwap doesn't trade aBTC
+                weth_volume_24h: Some(sushi_total_weth_volume.clone()),  // Include WETH volume
+                apt_fee_24h: None, // SushiSwap doesn't have fees
+                usdc_fee_24h: None, // SushiSwap doesn't have fees
+                usdt_fee_24h: None, // SushiSwap doesn't have fees
+                stapt_fee_24h: None, // SushiSwap doesn't have fees
+                abtc_fee_24h: None, // SushiSwap doesn't have fees
+                weth_fee_24h: None, // SushiSwap doesn't have fees
+            };
+            
+            info!("💾 Created SushiSwap aggregated record: APT={:?}, USDT={:?}, USDC={:?}, WETH={:?}", 
+                apt_data.apt_volume_24h, apt_data.usdt_volume_24h, apt_data.usdc_volume_24h, apt_data.weth_volume_24h);
+            
+            results.push(apt_data);
+        }
+
+        info!("✅ Successfully processed {} records in batch", results.len());
 
         Ok(Some(TransactionContext {
             data: results,

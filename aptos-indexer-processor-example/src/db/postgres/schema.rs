@@ -14,6 +14,8 @@ diesel::table! {
         stapt_fee_24h -> Nullable<Numeric>,
         abtc_volume_24h -> Nullable<Numeric>,
         abtc_fee_24h -> Nullable<Numeric>,
+        weth_volume_24h -> Nullable<Numeric>,
+        weth_fee_24h -> Nullable<Numeric>,
     }
 }
 
