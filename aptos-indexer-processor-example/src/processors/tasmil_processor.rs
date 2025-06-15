@@ -56,7 +56,7 @@ impl TasmilProcessor {
                     .await
                 {
                     Ok(updated_count) => {
-                        info!("✅ Reset {} pool volumes to 0", updated_count);
+                        info!("✅ Reset {} pool volumes to 0 (including 'aptos' aggregated data)", updated_count);
                     },
                     Err(e) => {
                         error!("❌ Failed to reset volumes: {}", e);
@@ -196,6 +196,107 @@ impl TasmilProcessor {
         }
 
         info!("✅ Successfully processed {} pool records", volume_data.len());
+        
+        // After updating individual protocols, calculate and update the aggregated "aptos" total
+        self.upsert_aptos_aggregated_data().await?;
+        
+        Ok(())
+    }
+
+    async fn upsert_aptos_aggregated_data(&self) -> Result<(), ProcessorError> {
+        let mut conn = self.connection_pool.get().await.map_err(|e| {
+            ProcessorError::ProcessError {
+                message: format!("Failed to get database connection for aptos aggregation: {}", e),
+            }
+        })?;
+
+        info!("🔄 Calculating aggregated data for 'aptos' protocol from dapps...");
+
+        // Define the dapps to aggregate
+        let dapp_names = vec!["sushiswap", "cellana", "thala", "liquidswap"];
+        
+        // Get data for all dapps
+        let dapp_data: Vec<AptData> = apt_data::table
+            .filter(apt_data::protocol_name.eq_any(&dapp_names))
+            .load(&mut conn)
+            .await
+            .map_err(|e| ProcessorError::ProcessError {
+                message: format!("Failed to load dapp data for aggregation: {}", e),
+            })?;
+
+        if dapp_data.is_empty() {
+            info!("📊 No dapp data found for aggregation");
+            return Ok(());
+        }
+
+        // Calculate totals
+        let zero_decimal = BigDecimal::zero();
+        let mut total_apt_volume = zero_decimal.clone();
+        let mut total_usdc_volume = zero_decimal.clone();
+        let mut total_usdt_volume = zero_decimal.clone();
+        let mut total_weth_volume = zero_decimal.clone();
+        let mut total_apt_fee = zero_decimal.clone();
+        let mut total_usdc_fee = zero_decimal.clone();
+        let mut total_usdt_fee = zero_decimal.clone();
+        let mut total_weth_fee = zero_decimal.clone();
+
+        for data in &dapp_data {
+            total_apt_volume += data.apt_volume_24h.as_ref().unwrap_or(&zero_decimal);
+            total_usdc_volume += data.usdc_volume_24h.as_ref().unwrap_or(&zero_decimal);
+            total_usdt_volume += data.usdt_volume_24h.as_ref().unwrap_or(&zero_decimal);
+            total_weth_volume += data.weth_volume_24h.as_ref().unwrap_or(&zero_decimal);
+            total_apt_fee += data.apt_fee_24h.as_ref().unwrap_or(&zero_decimal);
+            total_usdc_fee += data.usdc_fee_24h.as_ref().unwrap_or(&zero_decimal);
+            total_usdt_fee += data.usdt_fee_24h.as_ref().unwrap_or(&zero_decimal);
+            total_weth_fee += data.weth_fee_24h.as_ref().unwrap_or(&zero_decimal);
+        }
+
+        info!("📊 Aggregated totals: APT vol={}, USDC vol={}, USDT vol={}, WETH vol={}, APT fee={}, USDC fee={}, USDT fee={}, WETH fee={}", 
+            total_apt_volume, total_usdc_volume, total_usdt_volume, total_weth_volume,
+            total_apt_fee, total_usdc_fee, total_usdt_fee, total_weth_fee);
+
+        // Upsert the aggregated "aptos" record
+        match diesel::insert_into(apt_data::table)
+            .values(&NewAptData {
+                protocol_name: "aptos".to_string(),
+                apt_volume_24h: Some(total_apt_volume.clone()),
+                usdc_volume_24h: Some(total_usdc_volume.clone()),
+                usdt_volume_24h: Some(total_usdt_volume.clone()),
+                weth_volume_24h: Some(total_weth_volume.clone()),
+                apt_fee_24h: Some(total_apt_fee.clone()),
+                usdc_fee_24h: Some(total_usdc_fee.clone()),
+                usdt_fee_24h: Some(total_usdt_fee.clone()),
+                weth_fee_24h: Some(total_weth_fee.clone()),
+            })
+            .on_conflict(apt_data::protocol_name)
+            .do_update()
+            .set((
+                apt_data::apt_volume_24h.eq(excluded(apt_data::apt_volume_24h)),
+                apt_data::usdc_volume_24h.eq(excluded(apt_data::usdc_volume_24h)),
+                apt_data::usdt_volume_24h.eq(excluded(apt_data::usdt_volume_24h)),
+                apt_data::weth_volume_24h.eq(excluded(apt_data::weth_volume_24h)),
+                apt_data::apt_fee_24h.eq(excluded(apt_data::apt_fee_24h)),
+                apt_data::usdc_fee_24h.eq(excluded(apt_data::usdc_fee_24h)),
+                apt_data::usdt_fee_24h.eq(excluded(apt_data::usdt_fee_24h)),
+                apt_data::weth_fee_24h.eq(excluded(apt_data::weth_fee_24h)),
+                apt_data::inserted_at.eq(diesel::dsl::now)
+            ))
+            .execute(&mut conn)
+            .await
+        {
+            Ok(_) => {
+                info!("✅ Updated aggregated 'aptos' protocol data: APT vol={}, USDC vol={}, USDT vol={}, WETH vol={}, APT fee={}, USDC fee={}, USDT fee={}, WETH fee={}", 
+                    total_apt_volume, total_usdc_volume, total_usdt_volume, total_weth_volume,
+                    total_apt_fee, total_usdc_fee, total_usdt_fee, total_weth_fee);
+            },
+            Err(e) => {
+                error!("❌ Failed to update aggregated 'aptos' data: {}", e);
+                return Err(ProcessorError::ProcessError {
+                    message: format!("Aptos aggregation failed: {}", e),
+                });
+            }
+        }
+
         Ok(())
     }
 
@@ -257,7 +358,7 @@ impl TasmilProcessor {
                     .await
                 {
                     Ok(updated_count) => {
-                        info!("✅ Reset {} pool volumes for new 24h window", updated_count);
+                        info!("✅ Reset {} pool volumes for new 24h window (including 'aptos' aggregated data)", updated_count);
                     },
                     Err(e) => {
                         error!("❌ Failed to reset volumes: {}", e);
