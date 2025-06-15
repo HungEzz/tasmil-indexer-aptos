@@ -133,6 +133,15 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    coin_volume_24h (coin) {
+        coin -> Varchar,
+        buy_volume -> Nullable<Numeric>,
+        sell_volume -> Nullable<Numeric>,
+        inserted_at -> Timestamp,
+    }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(
     apt_data,
     backfill_processor_status,
@@ -145,4 +154,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     hourly_statistics,
     ledger_infos,
     liquidity_events,
+    coin_volume_24h,
 );

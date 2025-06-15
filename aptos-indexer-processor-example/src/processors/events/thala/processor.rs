@@ -48,6 +48,12 @@ pub struct PoolVolume {
     pub apt_fee_24h: BigDecimal,
     pub usdc_fee_24h: BigDecimal,
     pub usdt_fee_24h: BigDecimal,
+    pub apt_buy_volume_24h: BigDecimal,
+    pub apt_sell_volume_24h: BigDecimal,
+    pub usdc_buy_volume_24h: BigDecimal,
+    pub usdc_sell_volume_24h: BigDecimal,
+    pub usdt_buy_volume_24h: BigDecimal,
+    pub usdt_sell_volume_24h: BigDecimal,
 }
 
 impl Default for PoolVolume {
@@ -60,6 +66,12 @@ impl Default for PoolVolume {
             apt_fee_24h: BigDecimal::zero(),
             usdc_fee_24h: BigDecimal::zero(),
             usdt_fee_24h: BigDecimal::zero(),
+            apt_buy_volume_24h: BigDecimal::zero(),
+            apt_sell_volume_24h: BigDecimal::zero(),
+            usdc_buy_volume_24h: BigDecimal::zero(),
+            usdc_sell_volume_24h: BigDecimal::zero(),
+            usdt_buy_volume_24h: BigDecimal::zero(),
+            usdt_sell_volume_24h: BigDecimal::zero(),
         }
     }
 }
@@ -245,7 +257,7 @@ impl ThalaProcessor {
         let fee_amount = protocol_fee / from_divisor;
         let net_volume = &from_amount - &fee_amount;
 
-        // Update volumes and fees based on currency types
+        // Update total volumes and fees based on currency types (for backward compatibility)
         match from_currency {
             "APT" => {
                 pool_entry.apt_volume_24h += net_volume.clone();
@@ -267,6 +279,22 @@ impl ThalaProcessor {
             "USDC" => pool_entry.usdc_volume_24h += to_amount.clone(),
             "USDT" => pool_entry.usdt_volume_24h += to_amount.clone(),
             _ => debug!("Unknown to_currency: {}", to_currency),
+        }
+
+        // Update buy/sell volumes based on actual transaction direction
+        // from_currency is being sold, to_currency is being bought
+        match from_currency {
+            "APT" => pool_entry.apt_sell_volume_24h += net_volume.clone(),
+            "USDC" => pool_entry.usdc_sell_volume_24h += net_volume.clone(),
+            "USDT" => pool_entry.usdt_sell_volume_24h += net_volume.clone(),
+            _ => debug!("Unknown from_currency for sell: {}", from_currency),
+        }
+
+        match to_currency {
+            "APT" => pool_entry.apt_buy_volume_24h += to_amount.clone(),
+            "USDC" => pool_entry.usdc_buy_volume_24h += to_amount.clone(),
+            "USDT" => pool_entry.usdt_buy_volume_24h += to_amount.clone(),
+            _ => debug!("Unknown to_currency for buy: {}", to_currency),
         }
 
         info!("{} Thala {}: {} {} sold (net: {}), {} {} bought, {} {} fee", 

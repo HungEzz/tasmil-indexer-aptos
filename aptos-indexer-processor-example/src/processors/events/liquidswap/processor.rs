@@ -34,6 +34,15 @@ pub struct LiquidPoolVolume {
     pub usdc_volume_24h: BigDecimal,
     pub usdt_volume_24h: BigDecimal,
     pub weth_volume_24h: BigDecimal,
+    // Buy/Sell volume tracking
+    pub apt_buy_volume_24h: BigDecimal,
+    pub apt_sell_volume_24h: BigDecimal,
+    pub usdc_buy_volume_24h: BigDecimal,
+    pub usdc_sell_volume_24h: BigDecimal,
+    pub usdt_buy_volume_24h: BigDecimal,
+    pub usdt_sell_volume_24h: BigDecimal,
+    pub weth_buy_volume_24h: BigDecimal,
+    pub weth_sell_volume_24h: BigDecimal,
 }
 
 // Cached decimal divisors for performance
@@ -63,6 +72,14 @@ impl Default for LiquidPoolVolume {
             usdc_volume_24h: BigDecimal::from(0),
             usdt_volume_24h: BigDecimal::from(0),
             weth_volume_24h: BigDecimal::from(0),
+            apt_buy_volume_24h: BigDecimal::from(0),
+            apt_sell_volume_24h: BigDecimal::from(0),
+            usdc_buy_volume_24h: BigDecimal::from(0),
+            usdc_sell_volume_24h: BigDecimal::from(0),
+            usdt_buy_volume_24h: BigDecimal::from(0),
+            usdt_sell_volume_24h: BigDecimal::from(0),
+            weth_buy_volume_24h: BigDecimal::from(0),
+            weth_sell_volume_24h: BigDecimal::from(0),
         }
     }
 }
@@ -287,8 +304,13 @@ impl LiquidSwapProcessor {
             let apt_volume = x_in / &self.divisors.apt;
             let usdc_volume = y_out / &self.divisors.usdc;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
             pool_entry.usdc_volume_24h += &usdc_volume;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_volume;  // APT is being sold
+            pool_entry.usdc_buy_volume_24h += &usdc_volume;  // USDC is being bought
             
             info!("💱 LiquidSwap APT→izUSDC: Sold {} APT, received {} izUSDC", apt_volume, usdc_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
@@ -296,8 +318,13 @@ impl LiquidSwapProcessor {
             let usdc_volume = y_in / &self.divisors.usdc;
             let apt_volume = x_out / &self.divisors.apt;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
             pool_entry.usdc_volume_24h += &usdc_volume;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdc_sell_volume_24h += &usdc_volume;  // USDC is being sold
+            pool_entry.apt_buy_volume_24h += &apt_volume;  // APT is being bought
             
             info!("💱 LiquidSwap izUSDC→APT: Sold {} izUSDC, received {} APT", usdc_volume, apt_volume);
         }
@@ -320,8 +347,13 @@ impl LiquidSwapProcessor {
             let usdc_volume = x_in / &self.divisors.usdc;
             let apt_volume = y_out / &self.divisors.apt;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
             pool_entry.usdc_volume_24h += &usdc_volume;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdc_sell_volume_24h += &usdc_volume;  // USDC is being sold
+            pool_entry.apt_buy_volume_24h += &apt_volume;  // APT is being bought
             
             info!("💱 LiquidSwap izUSDC→APT: Sold {} izUSDC, received {} APT", usdc_volume, apt_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
@@ -329,8 +361,13 @@ impl LiquidSwapProcessor {
             let apt_volume = y_in / &self.divisors.apt;
             let usdc_volume = x_out / &self.divisors.usdc;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
             pool_entry.usdc_volume_24h += &usdc_volume;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_volume;  // APT is being sold
+            pool_entry.usdc_buy_volume_24h += &usdc_volume;  // USDC is being bought
             
             info!("💱 LiquidSwap APT→izUSDC: Sold {} APT, received {} izUSDC", apt_volume, usdc_volume);
         }
@@ -353,8 +390,13 @@ impl LiquidSwapProcessor {
             let apt_volume = x_in / &self.divisors.apt;
             let usdt_volume = y_out / &self.divisors.usdt;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
             pool_entry.usdt_volume_24h += &usdt_volume;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_volume;  // APT is being sold
+            pool_entry.usdt_buy_volume_24h += &usdt_volume;  // USDT is being bought
             
             info!("💱 LiquidSwap APT→izUSDT: Sold {} APT, received {} izUSDT", apt_volume, usdt_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
@@ -362,8 +404,13 @@ impl LiquidSwapProcessor {
             let usdt_volume = y_in / &self.divisors.usdt;
             let apt_volume = x_out / &self.divisors.apt;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
             pool_entry.usdt_volume_24h += &usdt_volume;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdt_sell_volume_24h += &usdt_volume;  // USDT is being sold
+            pool_entry.apt_buy_volume_24h += &apt_volume;  // APT is being bought
             
             info!("💱 LiquidSwap izUSDT→APT: Sold {} izUSDT, received {} APT", usdt_volume, apt_volume);
         }
@@ -386,8 +433,13 @@ impl LiquidSwapProcessor {
             let usdt_volume = x_in / &self.divisors.usdt;
             let apt_volume = y_out / &self.divisors.apt;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
             pool_entry.usdt_volume_24h += &usdt_volume;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdt_sell_volume_24h += &usdt_volume;  // USDT is being sold
+            pool_entry.apt_buy_volume_24h += &apt_volume;  // APT is being bought
             
             info!("💱 LiquidSwap izUSDT→APT: Sold {} izUSDT, received {} APT", usdt_volume, apt_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
@@ -395,8 +447,13 @@ impl LiquidSwapProcessor {
             let apt_volume = y_in / &self.divisors.apt;
             let usdt_volume = x_out / &self.divisors.usdt;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
             pool_entry.usdt_volume_24h += &usdt_volume;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_volume;  // APT is being sold
+            pool_entry.usdt_buy_volume_24h += &usdt_volume;  // USDT is being bought
             
             info!("💱 LiquidSwap APT→izUSDT: Sold {} APT, received {} izUSDT", apt_volume, usdt_volume);
         }
@@ -420,8 +477,13 @@ impl LiquidSwapProcessor {
             let apt_volume = x_in / &self.divisors.apt;
             let usdt_volume = y_out / &self.divisors.usdt;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
             pool_entry.usdt_volume_24h += &usdt_volume;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_volume;  // APT is being sold
+            pool_entry.usdt_buy_volume_24h += &usdt_volume;  // USDT is being bought
             
             info!("💱 LiquidSwap APT→whUSDT: Sold {} APT, received {} whUSDT", apt_volume, usdt_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
@@ -429,8 +491,13 @@ impl LiquidSwapProcessor {
             let usdt_volume = y_in / &self.divisors.usdt;
             let apt_volume = x_out / &self.divisors.apt;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
             pool_entry.usdt_volume_24h += &usdt_volume;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdt_sell_volume_24h += &usdt_volume;  // USDT is being sold
+            pool_entry.apt_buy_volume_24h += &apt_volume;  // APT is being bought
             
             info!("💱 LiquidSwap whUSDT→APT: Sold {} whUSDT, received {} APT", usdt_volume, apt_volume);
         }
@@ -454,8 +521,13 @@ impl LiquidSwapProcessor {
             let usdt_volume = x_in / &self.divisors.usdt;
             let apt_volume = y_out / &self.divisors.apt;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
             pool_entry.usdt_volume_24h += &usdt_volume;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdt_sell_volume_24h += &usdt_volume;  // USDT is being sold
+            pool_entry.apt_buy_volume_24h += &apt_volume;  // APT is being bought
             
             info!("💱 LiquidSwap whUSDT→APT: Sold {} whUSDT, received {} APT", usdt_volume, apt_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
@@ -463,8 +535,13 @@ impl LiquidSwapProcessor {
             let apt_volume = y_in / &self.divisors.apt;
             let usdt_volume = x_out / &self.divisors.usdt;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
             pool_entry.usdt_volume_24h += &usdt_volume;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_volume;  // APT is being sold
+            pool_entry.usdt_buy_volume_24h += &usdt_volume;  // USDT is being bought
             
             info!("💱 LiquidSwap APT→whUSDT: Sold {} APT, received {} whUSDT", apt_volume, usdt_volume);
         }
@@ -488,9 +565,13 @@ impl LiquidSwapProcessor {
             let whusdc_volume = x_in / &self.divisors.usdc;
             let izusdc_volume = y_out / &self.divisors.usdc;
             
-            // Both volumes are added to usdc_volume_24h since both are USDC variants
+            // Both volumes are added to usdc_volume_24h since both are USDC variants (for backward compatibility)
             pool_entry.usdc_volume_24h += &whusdc_volume;
             pool_entry.usdc_volume_24h += &izusdc_volume;
+            
+            // Update buy/sell volumes - both are USDC variants
+            pool_entry.usdc_sell_volume_24h += &whusdc_volume;  // whUSDC is being sold
+            pool_entry.usdc_buy_volume_24h += &izusdc_volume;  // izUSDC is being bought
             
             info!("💱 LiquidSwap whUSDC→izUSDC: Sold {} whUSDC, received {} izUSDC", whusdc_volume, izusdc_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
@@ -498,9 +579,13 @@ impl LiquidSwapProcessor {
             let izusdc_volume = y_in / &self.divisors.usdc;
             let whusdc_volume = x_out / &self.divisors.usdc;
             
-            // Both volumes are added to usdc_volume_24h since both are USDC variants
+            // Both volumes are added to usdc_volume_24h since both are USDC variants (for backward compatibility)
             pool_entry.usdc_volume_24h += &izusdc_volume;
             pool_entry.usdc_volume_24h += &whusdc_volume;
+            
+            // Update buy/sell volumes - both are USDC variants
+            pool_entry.usdc_sell_volume_24h += &izusdc_volume;  // izUSDC is being sold
+            pool_entry.usdc_buy_volume_24h += &whusdc_volume;  // whUSDC is being bought
             
             info!("💱 LiquidSwap izUSDC→whUSDC: Sold {} izUSDC, received {} whUSDC", izusdc_volume, whusdc_volume);
         }
@@ -524,9 +609,13 @@ impl LiquidSwapProcessor {
             let izusdc_volume = x_in / &self.divisors.usdc;
             let whusdc_volume = y_out / &self.divisors.usdc;
             
-            // Both volumes are added to usdc_volume_24h since both are USDC variants
+            // Both volumes are added to usdc_volume_24h since both are USDC variants (for backward compatibility)
             pool_entry.usdc_volume_24h += &izusdc_volume;
             pool_entry.usdc_volume_24h += &whusdc_volume;
+            
+            // Update buy/sell volumes - both are USDC variants
+            pool_entry.usdc_sell_volume_24h += &izusdc_volume;  // izUSDC is being sold
+            pool_entry.usdc_buy_volume_24h += &whusdc_volume;  // whUSDC is being bought
             
             info!("💱 LiquidSwap izUSDC→whUSDC: Sold {} izUSDC, received {} whUSDC", izusdc_volume, whusdc_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
@@ -534,9 +623,13 @@ impl LiquidSwapProcessor {
             let whusdc_volume = y_in / &self.divisors.usdc;
             let izusdc_volume = x_out / &self.divisors.usdc;
             
-            // Both volumes are added to usdc_volume_24h since both are USDC variants
+            // Both volumes are added to usdc_volume_24h since both are USDC variants (for backward compatibility)
             pool_entry.usdc_volume_24h += &whusdc_volume;
             pool_entry.usdc_volume_24h += &izusdc_volume;
+            
+            // Update buy/sell volumes - both are USDC variants
+            pool_entry.usdc_sell_volume_24h += &whusdc_volume;  // whUSDC is being sold
+            pool_entry.usdc_buy_volume_24h += &izusdc_volume;  // izUSDC is being bought
             
             info!("💱 LiquidSwap whUSDC→izUSDC: Sold {} whUSDC, received {} izUSDC", whusdc_volume, izusdc_volume);
         }
@@ -560,9 +653,13 @@ impl LiquidSwapProcessor {
             let izusdt_volume = x_in / &self.divisors.usdt;
             let whusdt_volume = y_out / &self.divisors.usdt;
             
-            // Both volumes are added to usdt_volume_24h since both are USDT variants
+            // Both volumes are added to usdt_volume_24h since both are USDT variants (for backward compatibility)
             pool_entry.usdt_volume_24h += &izusdt_volume;
             pool_entry.usdt_volume_24h += &whusdt_volume;
+            
+            // Update buy/sell volumes - both are USDT variants
+            pool_entry.usdt_sell_volume_24h += &izusdt_volume;  // izUSDT is being sold
+            pool_entry.usdt_buy_volume_24h += &whusdt_volume;  // whUSDT is being bought
             
             info!("💱 LiquidSwap izUSDT→whUSDT: Sold {} izUSDT, received {} whUSDT", izusdt_volume, whusdt_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
@@ -570,9 +667,13 @@ impl LiquidSwapProcessor {
             let whusdt_volume = y_in / &self.divisors.usdt;
             let izusdt_volume = x_out / &self.divisors.usdt;
             
-            // Both volumes are added to usdt_volume_24h since both are USDT variants
+            // Both volumes are added to usdt_volume_24h since both are USDT variants (for backward compatibility)
             pool_entry.usdt_volume_24h += &whusdt_volume;
             pool_entry.usdt_volume_24h += &izusdt_volume;
+            
+            // Update buy/sell volumes - both are USDT variants
+            pool_entry.usdt_sell_volume_24h += &whusdt_volume;  // whUSDT is being sold
+            pool_entry.usdt_buy_volume_24h += &izusdt_volume;  // izUSDT is being bought
             
             info!("💱 LiquidSwap whUSDT→izUSDT: Sold {} whUSDT, received {} izUSDT", whusdt_volume, izusdt_volume);
         }
@@ -596,9 +697,13 @@ impl LiquidSwapProcessor {
             let whusdt_volume = x_in / &self.divisors.usdt;
             let izusdt_volume = y_out / &self.divisors.usdt;
             
-            // Both volumes are added to usdt_volume_24h since both are USDT variants
+            // Both volumes are added to usdt_volume_24h since both are USDT variants (for backward compatibility)
             pool_entry.usdt_volume_24h += &whusdt_volume;
             pool_entry.usdt_volume_24h += &izusdt_volume;
+            
+            // Update buy/sell volumes - both are USDT variants
+            pool_entry.usdt_sell_volume_24h += &whusdt_volume;  // whUSDT is being sold
+            pool_entry.usdt_buy_volume_24h += &izusdt_volume;  // izUSDT is being bought
             
             info!("💱 LiquidSwap whUSDT→izUSDT: Sold {} whUSDT, received {} izUSDT", whusdt_volume, izusdt_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
@@ -606,9 +711,13 @@ impl LiquidSwapProcessor {
             let izusdt_volume = y_in / &self.divisors.usdt;
             let whusdt_volume = x_out / &self.divisors.usdt;
             
-            // Both volumes are added to usdt_volume_24h since both are USDT variants
+            // Both volumes are added to usdt_volume_24h since both are USDT variants (for backward compatibility)
             pool_entry.usdt_volume_24h += &izusdt_volume;
             pool_entry.usdt_volume_24h += &whusdt_volume;
+            
+            // Update buy/sell volumes - both are USDT variants
+            pool_entry.usdt_sell_volume_24h += &izusdt_volume;  // izUSDT is being sold
+            pool_entry.usdt_buy_volume_24h += &whusdt_volume;  // whUSDT is being bought
             
             info!("💱 LiquidSwap izUSDT→whUSDT: Sold {} izUSDT, received {} whUSDT", izusdt_volume, whusdt_volume);
         }
@@ -625,26 +734,35 @@ impl LiquidSwapProcessor {
         // APT is token_x, izWETH is token_y
         // x_in, x_out represent APT amounts
         // y_in, y_out represent izWETH amounts
-        // izWETH is stored as WETH in database
         
         if x_in > &BigDecimal::zero() && y_out > &BigDecimal::zero() {
             // Selling APT for izWETH: APT in, izWETH out
             let apt_volume = x_in / &self.divisors.apt;
-            let weth_volume = y_out / &self.divisors.weth;
+            let izweth_volume = y_out / &self.divisors.weth;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
-            pool_entry.weth_volume_24h += &weth_volume;
+            pool_entry.weth_volume_24h += &izweth_volume;
             
-            info!("💱 LiquidSwap APT→izWETH: Sold {} APT, received {} izWETH", apt_volume, weth_volume);
+            // Update buy/sell volumes
+            pool_entry.apt_sell_volume_24h += &apt_volume;  // APT is being sold
+            pool_entry.weth_buy_volume_24h += &izweth_volume;  // izWETH is being bought
+            
+            info!("💱 LiquidSwap APT→izWETH: Sold {} APT, received {} izWETH", apt_volume, izweth_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
             // Selling izWETH for APT: izWETH in, APT out
-            let weth_volume = y_in / &self.divisors.weth;
+            let izweth_volume = y_in / &self.divisors.weth;
             let apt_volume = x_out / &self.divisors.apt;
             
+            // Update total volumes (for backward compatibility)
+            pool_entry.weth_volume_24h += &izweth_volume;
             pool_entry.apt_volume_24h += &apt_volume;
-            pool_entry.weth_volume_24h += &weth_volume;
             
-            info!("💱 LiquidSwap izWETH→APT: Sold {} izWETH, received {} APT", weth_volume, apt_volume);
+            // Update buy/sell volumes
+            pool_entry.weth_sell_volume_24h += &izweth_volume;  // izWETH is being sold
+            pool_entry.apt_buy_volume_24h += &apt_volume;  // APT is being bought
+            
+            info!("💱 LiquidSwap izWETH→APT: Sold {} izWETH, received {} APT", izweth_volume, apt_volume);
         }
     }
 
@@ -659,26 +777,35 @@ impl LiquidSwapProcessor {
         // izWETH is token_x, APT is token_y
         // x_in, x_out represent izWETH amounts
         // y_in, y_out represent APT amounts
-        // izWETH is stored as WETH in database
         
         if x_in > &BigDecimal::zero() && y_out > &BigDecimal::zero() {
             // Selling izWETH for APT: izWETH in, APT out
-            let weth_volume = x_in / &self.divisors.weth;
+            let izweth_volume = x_in / &self.divisors.weth;
             let apt_volume = y_out / &self.divisors.apt;
             
+            // Update total volumes (for backward compatibility)
+            pool_entry.weth_volume_24h += &izweth_volume;
             pool_entry.apt_volume_24h += &apt_volume;
-            pool_entry.weth_volume_24h += &weth_volume;
             
-            info!("💱 LiquidSwap izWETH→APT: Sold {} izWETH, received {} APT", weth_volume, apt_volume);
+            // Update buy/sell volumes
+            pool_entry.weth_sell_volume_24h += &izweth_volume;  // izWETH is being sold
+            pool_entry.apt_buy_volume_24h += &apt_volume;  // APT is being bought
+            
+            info!("💱 LiquidSwap izWETH→APT: Sold {} izWETH, received {} APT", izweth_volume, apt_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
             // Selling APT for izWETH: APT in, izWETH out
             let apt_volume = y_in / &self.divisors.apt;
-            let weth_volume = x_out / &self.divisors.weth;
+            let izweth_volume = x_out / &self.divisors.weth;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
-            pool_entry.weth_volume_24h += &weth_volume;
+            pool_entry.weth_volume_24h += &izweth_volume;
             
-            info!("💱 LiquidSwap APT→izWETH: Sold {} APT, received {} izWETH", apt_volume, weth_volume);
+            // Update buy/sell volumes
+            pool_entry.apt_sell_volume_24h += &apt_volume;  // APT is being sold
+            pool_entry.weth_buy_volume_24h += &izweth_volume;  // izWETH is being bought
+            
+            info!("💱 LiquidSwap APT→izWETH: Sold {} APT, received {} izWETH", apt_volume, izweth_volume);
         }
     }
 
@@ -693,26 +820,35 @@ impl LiquidSwapProcessor {
         // APT is token_x, whWETH is token_y
         // x_in, x_out represent APT amounts
         // y_in, y_out represent whWETH amounts
-        // whWETH is stored as WETH in database
         
         if x_in > &BigDecimal::zero() && y_out > &BigDecimal::zero() {
             // Selling APT for whWETH: APT in, whWETH out
             let apt_volume = x_in / &self.divisors.apt;
-            let weth_volume = y_out / &self.divisors.weth;
+            let whweth_volume = y_out / &self.divisors.weth;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
-            pool_entry.weth_volume_24h += &weth_volume;
+            pool_entry.weth_volume_24h += &whweth_volume;
             
-            info!("💱 LiquidSwap APT→whWETH: Sold {} APT, received {} whWETH", apt_volume, weth_volume);
+            // Update buy/sell volumes
+            pool_entry.apt_sell_volume_24h += &apt_volume;  // APT is being sold
+            pool_entry.weth_buy_volume_24h += &whweth_volume;  // whWETH is being bought
+            
+            info!("💱 LiquidSwap APT→whWETH: Sold {} APT, received {} whWETH", apt_volume, whweth_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
             // Selling whWETH for APT: whWETH in, APT out
-            let weth_volume = y_in / &self.divisors.weth;
+            let whweth_volume = y_in / &self.divisors.weth;
             let apt_volume = x_out / &self.divisors.apt;
             
+            // Update total volumes (for backward compatibility)
+            pool_entry.weth_volume_24h += &whweth_volume;
             pool_entry.apt_volume_24h += &apt_volume;
-            pool_entry.weth_volume_24h += &weth_volume;
             
-            info!("💱 LiquidSwap whWETH→APT: Sold {} whWETH, received {} APT", weth_volume, apt_volume);
+            // Update buy/sell volumes
+            pool_entry.weth_sell_volume_24h += &whweth_volume;  // whWETH is being sold
+            pool_entry.apt_buy_volume_24h += &apt_volume;  // APT is being bought
+            
+            info!("💱 LiquidSwap whWETH→APT: Sold {} whWETH, received {} APT", whweth_volume, apt_volume);
         }
     }
 
@@ -727,26 +863,35 @@ impl LiquidSwapProcessor {
         // whWETH is token_x, APT is token_y
         // x_in, x_out represent whWETH amounts
         // y_in, y_out represent APT amounts
-        // whWETH is stored as WETH in database
         
         if x_in > &BigDecimal::zero() && y_out > &BigDecimal::zero() {
             // Selling whWETH for APT: whWETH in, APT out
-            let weth_volume = x_in / &self.divisors.weth;
+            let whweth_volume = x_in / &self.divisors.weth;
             let apt_volume = y_out / &self.divisors.apt;
             
+            // Update total volumes (for backward compatibility)
+            pool_entry.weth_volume_24h += &whweth_volume;
             pool_entry.apt_volume_24h += &apt_volume;
-            pool_entry.weth_volume_24h += &weth_volume;
             
-            info!("💱 LiquidSwap whWETH→APT: Sold {} whWETH, received {} APT", weth_volume, apt_volume);
+            // Update buy/sell volumes
+            pool_entry.weth_sell_volume_24h += &whweth_volume;  // whWETH is being sold
+            pool_entry.apt_buy_volume_24h += &apt_volume;  // APT is being bought
+            
+            info!("💱 LiquidSwap whWETH→APT: Sold {} whWETH, received {} APT", whweth_volume, apt_volume);
         } else if y_in > &BigDecimal::zero() && x_out > &BigDecimal::zero() {
             // Selling APT for whWETH: APT in, whWETH out
             let apt_volume = y_in / &self.divisors.apt;
-            let weth_volume = x_out / &self.divisors.weth;
+            let whweth_volume = x_out / &self.divisors.weth;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_volume;
-            pool_entry.weth_volume_24h += &weth_volume;
+            pool_entry.weth_volume_24h += &whweth_volume;
             
-            info!("💱 LiquidSwap APT→whWETH: Sold {} APT, received {} whWETH", apt_volume, weth_volume);
+            // Update buy/sell volumes
+            pool_entry.apt_sell_volume_24h += &apt_volume;  // APT is being sold
+            pool_entry.weth_buy_volume_24h += &whweth_volume;  // whWETH is being bought
+            
+            info!("💱 LiquidSwap APT→whWETH: Sold {} APT, received {} whWETH", apt_volume, whweth_volume);
         }
     }
 

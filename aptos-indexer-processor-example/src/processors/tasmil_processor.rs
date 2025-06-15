@@ -13,10 +13,21 @@ use diesel_async::RunQueryDsl;
 use std::sync::mpsc;
 use tracing::{error, info, warn, debug};
 
-use crate::db::common::models::apt_models::{AptData, NewAptData};
-use crate::schema::apt_data;
-use crate::processors::events::volume_calculator::VolumeCalculator;
-use crate::utils::database::ArcDbPool;
+use crate::{
+    db::{
+        common::models::{
+            apt_models::{AptData, NewAptData},
+            coin_volume_models::{NewCoinVolume24h, CoinVolume24h},
+        },
+        postgres::schema::{apt_data, coin_volume_24h},
+    },
+    processors::events::{
+        volume_calculator::VolumeCalculator,
+    },
+    utils::{
+        database::ArcDbPool,
+    },
+};
 
 pub struct TasmilProcessor {
     connection_pool: ArcDbPool,
@@ -60,6 +71,24 @@ impl TasmilProcessor {
                     },
                     Err(e) => {
                         error!("❌ Failed to reset volumes: {}", e);
+                    }
+                }
+
+                // Also reset coin volumes
+                match diesel::update(coin_volume_24h::table)
+                    .set((
+                        coin_volume_24h::buy_volume.eq(Some(BigDecimal::zero())),
+                        coin_volume_24h::sell_volume.eq(Some(BigDecimal::zero())),
+                        coin_volume_24h::inserted_at.eq(diesel::dsl::now)
+                    ))
+                    .execute(&mut conn)
+                    .await
+                {
+                    Ok(updated_count) => {
+                        info!("✅ Reset {} coin volumes to 0", updated_count);
+                    },
+                    Err(e) => {
+                        error!("❌ Failed to reset coin volumes: {}", e);
                     }
                 }
             }
@@ -199,6 +228,9 @@ impl TasmilProcessor {
         
         // After updating individual protocols, calculate and update the aggregated "aptos" total
         self.upsert_aptos_aggregated_data().await?;
+        
+        // Process coin buy/sell volumes
+        self.process_coin_volumes(&volume_data).await?;
         
         Ok(())
     }
@@ -364,12 +396,185 @@ impl TasmilProcessor {
                         error!("❌ Failed to reset volumes: {}", e);
                     }
                 }
+
+                // Also reset coin volumes for new 24h window
+                match diesel::update(coin_volume_24h::table)
+                    .set((
+                        coin_volume_24h::buy_volume.eq(Some(BigDecimal::zero())),
+                        coin_volume_24h::sell_volume.eq(Some(BigDecimal::zero())),
+                        coin_volume_24h::inserted_at.eq(diesel::dsl::now)
+                    ))
+                    .execute(&mut conn)
+                    .await
+                {
+                    Ok(updated_count) => {
+                        info!("✅ Reset {} coin volumes for new 24h window", updated_count);
+                    },
+                    Err(e) => {
+                        error!("❌ Failed to reset coin volumes: {}", e);
+                    }
+                }
             } else {
                 info!("✅ Volume data is recent (last update: {}), continuing accumulation", 
                     latest_utc.format("%Y-%m-%d %H:%M:%S UTC"));
             }
         }
 
+        Ok(())
+    }
+
+    async fn process_coin_volumes(&self, volume_data: &[NewAptData]) -> Result<(), ProcessorError> {
+        if volume_data.is_empty() {
+            return Ok(());
+        }
+
+        info!("🪙 Processing coin buy/sell volumes for {} protocols", volume_data.len());
+
+        let mut coin_volume_records: Vec<NewCoinVolume24h> = Vec::new();
+
+        for record in volume_data {
+            let zero_decimal = BigDecimal::zero();
+
+            // Process each coin type based on volume data
+            // APT volumes
+            if let Some(apt_volume) = &record.apt_volume_24h {
+                if apt_volume > &zero_decimal {
+                    // TODO: Implement proper buy/sell tracking based on transaction direction
+                    // Currently splitting evenly as a placeholder. In the future, we should:
+                    // 1. Track actual transaction direction (token_in vs token_out) in VolumeCalculator
+                    // 2. Pass buy/sell volumes separately from each processor
+                    // 3. Aggregate buy/sell volumes correctly here
+                    let half_volume = apt_volume / BigDecimal::from(2);
+                    
+                    coin_volume_records.push(NewCoinVolume24h {
+                        coin: "APT".to_string(),
+                        buy_volume: Some(half_volume.clone()),
+                        sell_volume: Some(half_volume),
+                    });
+                }
+            }
+
+            // USDC volumes
+            if let Some(usdc_volume) = &record.usdc_volume_24h {
+                if usdc_volume > &zero_decimal {
+                    let half_volume = usdc_volume / BigDecimal::from(2);
+                    
+                    coin_volume_records.push(NewCoinVolume24h {
+                        coin: "USDC".to_string(),
+                        buy_volume: Some(half_volume.clone()),
+                        sell_volume: Some(half_volume),
+                    });
+                }
+            }
+
+            // USDT volumes
+            if let Some(usdt_volume) = &record.usdt_volume_24h {
+                if usdt_volume > &zero_decimal {
+                    let half_volume = usdt_volume / BigDecimal::from(2);
+                    
+                    coin_volume_records.push(NewCoinVolume24h {
+                        coin: "USDT".to_string(),
+                        buy_volume: Some(half_volume.clone()),
+                        sell_volume: Some(half_volume),
+                    });
+                }
+            }
+
+            // WETH volumes
+            if let Some(weth_volume) = &record.weth_volume_24h {
+                if weth_volume > &zero_decimal {
+                    let half_volume = weth_volume / BigDecimal::from(2);
+                    
+                    coin_volume_records.push(NewCoinVolume24h {
+                        coin: "WETH".to_string(),
+                        buy_volume: Some(half_volume.clone()),
+                        sell_volume: Some(half_volume),
+                    });
+                }
+            }
+        }
+
+        if !coin_volume_records.is_empty() {
+            self.upsert_coin_volumes(coin_volume_records).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn upsert_coin_volumes(&self, coin_volume_data: Vec<NewCoinVolume24h>) -> Result<(), ProcessorError> {
+        if coin_volume_data.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.connection_pool.get().await.map_err(|e| {
+            ProcessorError::ProcessError {
+                message: format!("Failed to get database connection for coin volumes: {}", e),
+            }
+        })?;
+
+        info!("🪙 Upserting {} aggregated coin volume records", coin_volume_data.len());
+
+        for record in &coin_volume_data {
+            let zero_decimal = BigDecimal::zero();
+            let batch_buy_volume = record.buy_volume.as_ref().unwrap_or(&zero_decimal);
+            let batch_sell_volume = record.sell_volume.as_ref().unwrap_or(&zero_decimal);
+            
+            // Get current volumes first
+            let current_data = coin_volume_24h::table
+                .filter(coin_volume_24h::coin.eq(&record.coin))
+                .first::<CoinVolume24h>(&mut conn)
+                .await
+                .optional()
+                .map_err(|e| ProcessorError::ProcessError {
+                    message: format!("Failed to get current coin volumes for {}: {}", record.coin, e),
+                })?;
+
+            let (current_buy_volume, current_sell_volume) = if let Some(data) = current_data {
+                let current_buy = data.buy_volume.unwrap_or_else(|| zero_decimal.clone());
+                let current_sell = data.sell_volume.unwrap_or_else(|| zero_decimal.clone());
+                (current_buy, current_sell)
+            } else {
+                (zero_decimal.clone(), zero_decimal.clone())
+            };
+            
+            // Accumulate volumes
+            let new_buy_volume = &current_buy_volume + batch_buy_volume;
+            let new_sell_volume = &current_sell_volume + batch_sell_volume;
+            
+            // UPSERT: INSERT or UPDATE if coin exists
+            match diesel::insert_into(coin_volume_24h::table)
+                .values(&NewCoinVolume24h {
+                    coin: record.coin.clone(),
+                    buy_volume: Some(new_buy_volume.clone()),
+                    sell_volume: Some(new_sell_volume.clone()),
+                })
+                .on_conflict(coin_volume_24h::coin)
+                .do_update()
+                .set((
+                    coin_volume_24h::buy_volume.eq(excluded(coin_volume_24h::buy_volume)),
+                    coin_volume_24h::sell_volume.eq(excluded(coin_volume_24h::sell_volume)),
+                    coin_volume_24h::inserted_at.eq(diesel::dsl::now)
+                ))
+                .execute(&mut conn)
+                .await
+            {
+                Ok(_) => {
+                    info!("✅ Updated aggregated coin volume for {}: buy +{} (total: {}), sell +{} (total: {})", 
+                        record.coin,
+                        batch_buy_volume, new_buy_volume, 
+                        batch_sell_volume, new_sell_volume);
+                },
+                Err(e) => {
+                    error!("❌ Failed to update coin volume for {}: {}", record.coin, e);
+                    return Err(ProcessorError::ProcessError {
+                        message: format!("Coin volume update failed: {}", e),
+                    });
+                }
+            }
+        }
+
+        info!("✅ Successfully processed {} aggregated coin volume records", coin_volume_data.len());
+        
         Ok(())
     }
 }
@@ -404,8 +609,13 @@ impl Processable for TasmilProcessor {
             }
         };
 
-        // Insert new volume records to database
-        self.upsert_pool_volumes(volume_context.data).await?;
+        // Insert APT data
+        self.upsert_pool_volumes(volume_context.data.apt_data).await?;
+
+        // Insert coin volume data
+        if !volume_context.data.coin_volume_data.is_empty() {
+            self.upsert_coin_volumes(volume_context.data.coin_volume_data).await?;
+        }
 
         // Send notification
         if let Err(e) = self.sender.send(format!(
@@ -430,4 +640,28 @@ impl NamedStep for TasmilProcessor {
     fn name(&self) -> String {
         "TasmilProcessor".to_string()
     }
+}
+
+async fn insert_coin_volume_to_db(
+    conn: ArcDbPool,
+    items_to_insert: Vec<NewCoinVolume24h>,
+) -> Result<(), diesel::result::Error> {
+    use crate::db::postgres::schema::coin_volume_24h::dsl::*;
+
+    let mut conn = conn.get().await.expect("Failed to get connection");
+
+    for item in items_to_insert {
+        diesel::insert_into(coin_volume_24h)
+            .values(&item)
+            .on_conflict(coin)
+            .do_update()
+            .set((
+                buy_volume.eq(excluded(buy_volume)),
+                sell_volume.eq(excluded(sell_volume)),
+                inserted_at.eq(diesel::dsl::now),
+            ))
+            .execute(&mut conn)
+            .await?;
+    }
+    Ok(())
 }

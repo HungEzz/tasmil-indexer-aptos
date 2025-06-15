@@ -34,6 +34,15 @@ pub struct SushiPoolVolume {
     pub usdt_volume_24h: BigDecimal,
     pub usdc_volume_24h: BigDecimal,  // Add USDC support
     pub weth_volume_24h: BigDecimal,  // Add WETH support
+    // Buy/Sell volume tracking
+    pub apt_buy_volume_24h: BigDecimal,
+    pub apt_sell_volume_24h: BigDecimal,
+    pub usdt_buy_volume_24h: BigDecimal,
+    pub usdt_sell_volume_24h: BigDecimal,
+    pub usdc_buy_volume_24h: BigDecimal,
+    pub usdc_sell_volume_24h: BigDecimal,
+    pub weth_buy_volume_24h: BigDecimal,
+    pub weth_sell_volume_24h: BigDecimal,
     // Note: SushiSwap doesn't have fees, so no fee fields
 }
 
@@ -64,6 +73,14 @@ impl Default for SushiPoolVolume {
             usdt_volume_24h: BigDecimal::from(0),
             usdc_volume_24h: BigDecimal::from(0),
             weth_volume_24h: BigDecimal::from(0),
+            apt_buy_volume_24h: BigDecimal::from(0),
+            apt_sell_volume_24h: BigDecimal::from(0),
+            usdt_buy_volume_24h: BigDecimal::from(0),
+            usdt_sell_volume_24h: BigDecimal::from(0),
+            usdc_buy_volume_24h: BigDecimal::from(0),
+            usdc_sell_volume_24h: BigDecimal::from(0),
+            weth_buy_volume_24h: BigDecimal::from(0),
+            weth_sell_volume_24h: BigDecimal::from(0),
         }
     }
 }
@@ -277,9 +294,13 @@ impl SushiSwapProcessor {
             let apt_amount = amount_x_in / &self.divisors.apt;
             let izusdt_amount = amount_y_out / &self.divisors.usdt;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_amount;
             pool_entry.usdt_volume_24h += &izusdt_amount;  // Save izUSDT as USDT volume
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_amount;  // APT is being sold
+            pool_entry.usdt_buy_volume_24h += &izusdt_amount;  // USDT is being bought
             
             info!("📉 SushiSwap APT→izUSDT: {} APT sold, {} izUSDT received", 
                 apt_amount, izusdt_amount);
@@ -289,9 +310,13 @@ impl SushiSwapProcessor {
             let izusdt_amount = amount_y_in / &self.divisors.usdt;
             let apt_amount = amount_x_out / &self.divisors.apt;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.usdt_volume_24h += &izusdt_amount;  // Save izUSDT as USDT volume
             pool_entry.apt_volume_24h += &apt_amount;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdt_sell_volume_24h += &izusdt_amount;  // USDT is being sold
+            pool_entry.apt_buy_volume_24h += &apt_amount;  // APT is being bought
             
             info!("📈 SushiSwap izUSDT→APT: {} izUSDT sold, {} APT received", 
                 izusdt_amount, apt_amount);
@@ -313,9 +338,13 @@ impl SushiSwapProcessor {
             let izusdt_amount = amount_x_in / &self.divisors.usdt;
             let apt_amount = amount_y_out / &self.divisors.apt;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.usdt_volume_24h += &izusdt_amount;  // Save izUSDT as USDT volume
             pool_entry.apt_volume_24h += &apt_amount;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdt_sell_volume_24h += &izusdt_amount;  // USDT is being sold
+            pool_entry.apt_buy_volume_24h += &apt_amount;  // APT is being bought
             
             info!("📈 SushiSwap izUSDT→APT: {} izUSDT sold, {} APT received", 
                 izusdt_amount, apt_amount);
@@ -325,9 +354,13 @@ impl SushiSwapProcessor {
             let apt_amount = amount_y_in / &self.divisors.apt;
             let izusdt_amount = amount_x_out / &self.divisors.usdt;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_amount;
             pool_entry.usdt_volume_24h += &izusdt_amount;  // Save izUSDT as USDT volume
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_amount;  // APT is being sold
+            pool_entry.usdt_buy_volume_24h += &izusdt_amount;  // USDT is being bought
             
             info!("📉 SushiSwap APT→izUSDT: {} APT sold, {} izUSDT received", 
                 apt_amount, izusdt_amount);
@@ -349,9 +382,13 @@ impl SushiSwapProcessor {
             let apt_amount = amount_x_in / &self.divisors.apt;
             let izusdc_amount = amount_y_out / &self.divisors.usdc;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_amount;
             pool_entry.usdc_volume_24h += &izusdc_amount;  // Save izUSDC as USDC volume
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_amount;  // APT is being sold
+            pool_entry.usdc_buy_volume_24h += &izusdc_amount;  // USDC is being bought
             
             info!("📉 SushiSwap APT→izUSDC: {} APT sold, {} izUSDC received", 
                 apt_amount, izusdc_amount);
@@ -361,9 +398,13 @@ impl SushiSwapProcessor {
             let izusdc_amount = amount_y_in / &self.divisors.usdc;
             let apt_amount = amount_x_out / &self.divisors.apt;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.usdc_volume_24h += &izusdc_amount;  // Save izUSDC as USDC volume
             pool_entry.apt_volume_24h += &apt_amount;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdc_sell_volume_24h += &izusdc_amount;  // USDC is being sold
+            pool_entry.apt_buy_volume_24h += &apt_amount;  // APT is being bought
             
             info!("📈 SushiSwap izUSDC→APT: {} izUSDC sold, {} APT received", 
                 izusdc_amount, apt_amount);
@@ -385,9 +426,13 @@ impl SushiSwapProcessor {
             let izusdc_amount = amount_x_in / &self.divisors.usdc;
             let apt_amount = amount_y_out / &self.divisors.apt;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.usdc_volume_24h += &izusdc_amount;  // Save izUSDC as USDC volume
             pool_entry.apt_volume_24h += &apt_amount;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdc_sell_volume_24h += &izusdc_amount;  // USDC is being sold
+            pool_entry.apt_buy_volume_24h += &apt_amount;  // APT is being bought
             
             info!("📈 SushiSwap izUSDC→APT: {} izUSDC sold, {} APT received", 
                 izusdc_amount, apt_amount);
@@ -397,9 +442,13 @@ impl SushiSwapProcessor {
             let apt_amount = amount_y_in / &self.divisors.apt;
             let izusdc_amount = amount_x_out / &self.divisors.usdc;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_amount;
             pool_entry.usdc_volume_24h += &izusdc_amount;  // Save izUSDC as USDC volume
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_amount;  // APT is being sold
+            pool_entry.usdc_buy_volume_24h += &izusdc_amount;  // USDC is being bought
             
             info!("📉 SushiSwap APT→izUSDC: {} APT sold, {} izUSDC received", 
                 apt_amount, izusdc_amount);
@@ -421,9 +470,13 @@ impl SushiSwapProcessor {
             let apt_amount = amount_x_in / &self.divisors.apt;
             let whusdc_amount = amount_y_out / &self.divisors.usdc;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_amount;
             pool_entry.usdc_volume_24h += &whusdc_amount;  // Save whUSDC as USDC volume
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_amount;  // APT is being sold
+            pool_entry.usdc_buy_volume_24h += &whusdc_amount;  // USDC is being bought
             
             info!("📉 SushiSwap APT→whUSDC: {} APT sold, {} whUSDC received", 
                 apt_amount, whusdc_amount);
@@ -433,9 +486,13 @@ impl SushiSwapProcessor {
             let whusdc_amount = amount_y_in / &self.divisors.usdc;
             let apt_amount = amount_x_out / &self.divisors.apt;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.usdc_volume_24h += &whusdc_amount;  // Save whUSDC as USDC volume
             pool_entry.apt_volume_24h += &apt_amount;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdc_sell_volume_24h += &whusdc_amount;  // USDC is being sold
+            pool_entry.apt_buy_volume_24h += &apt_amount;  // APT is being bought
             
             info!("📈 SushiSwap whUSDC→APT: {} whUSDC sold, {} APT received", 
                 whusdc_amount, apt_amount);
@@ -457,9 +514,13 @@ impl SushiSwapProcessor {
             let whusdc_amount = amount_x_in / &self.divisors.usdc;
             let apt_amount = amount_y_out / &self.divisors.apt;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.usdc_volume_24h += &whusdc_amount;  // Save whUSDC as USDC volume
             pool_entry.apt_volume_24h += &apt_amount;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdc_sell_volume_24h += &whusdc_amount;  // USDC is being sold
+            pool_entry.apt_buy_volume_24h += &apt_amount;  // APT is being bought
             
             info!("📈 SushiSwap whUSDC→APT: {} whUSDC sold, {} APT received", 
                 whusdc_amount, apt_amount);
@@ -469,9 +530,13 @@ impl SushiSwapProcessor {
             let apt_amount = amount_y_in / &self.divisors.apt;
             let whusdc_amount = amount_x_out / &self.divisors.usdc;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_amount;
             pool_entry.usdc_volume_24h += &whusdc_amount;  // Save whUSDC as USDC volume
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_amount;  // APT is being sold
+            pool_entry.usdc_buy_volume_24h += &whusdc_amount;  // USDC is being bought
             
             info!("📉 SushiSwap APT→whUSDC: {} APT sold, {} whUSDC received", 
                 apt_amount, whusdc_amount);
@@ -493,9 +558,13 @@ impl SushiSwapProcessor {
             let apt_amount = amount_x_in / &self.divisors.apt;
             let izweth_amount = amount_y_out / &self.divisors.weth;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_amount;
             pool_entry.weth_volume_24h += &izweth_amount;  // Save izWETH as WETH volume
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_amount;  // APT is being sold
+            pool_entry.weth_buy_volume_24h += &izweth_amount;  // WETH is being bought
             
             info!("📉 SushiSwap APT→izWETH: {} APT sold, {} izWETH received", 
                 apt_amount, izweth_amount);
@@ -505,9 +574,13 @@ impl SushiSwapProcessor {
             let izweth_amount = amount_y_in / &self.divisors.weth;
             let apt_amount = amount_x_out / &self.divisors.apt;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.weth_volume_24h += &izweth_amount;  // Save izWETH as WETH volume
             pool_entry.apt_volume_24h += &apt_amount;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.weth_sell_volume_24h += &izweth_amount;  // WETH is being sold
+            pool_entry.apt_buy_volume_24h += &apt_amount;  // APT is being bought
             
             info!("📈 SushiSwap izWETH→APT: {} izWETH sold, {} APT received", 
                 izweth_amount, apt_amount);
@@ -529,9 +602,13 @@ impl SushiSwapProcessor {
             let izweth_amount = amount_x_in / &self.divisors.weth;
             let apt_amount = amount_y_out / &self.divisors.apt;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.weth_volume_24h += &izweth_amount;  // Save izWETH as WETH volume
             pool_entry.apt_volume_24h += &apt_amount;
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.weth_sell_volume_24h += &izweth_amount;  // WETH is being sold
+            pool_entry.apt_buy_volume_24h += &apt_amount;  // APT is being bought
             
             info!("📈 SushiSwap izWETH→APT: {} izWETH sold, {} APT received", 
                 izweth_amount, apt_amount);
@@ -541,9 +618,13 @@ impl SushiSwapProcessor {
             let apt_amount = amount_y_in / &self.divisors.apt;
             let izweth_amount = amount_x_out / &self.divisors.weth;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.apt_volume_24h += &apt_amount;
             pool_entry.weth_volume_24h += &izweth_amount;  // Save izWETH as WETH volume
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.apt_sell_volume_24h += &apt_amount;  // APT is being sold
+            pool_entry.weth_buy_volume_24h += &izweth_amount;  // WETH is being bought
             
             info!("📉 SushiSwap APT→izWETH: {} APT sold, {} izWETH received", 
                 apt_amount, izweth_amount);
@@ -565,9 +646,13 @@ impl SushiSwapProcessor {
             let izweth_amount = amount_x_in / &self.divisors.weth;
             let izusdc_amount = amount_y_out / &self.divisors.usdc;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.weth_volume_24h += &izweth_amount;  // Save izWETH as WETH volume
             pool_entry.usdc_volume_24h += &izusdc_amount;  // Save izUSDC as USDC volume
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.weth_sell_volume_24h += &izweth_amount;  // WETH is being sold
+            pool_entry.usdc_buy_volume_24h += &izusdc_amount;  // USDC is being bought
             
             info!("📉 SushiSwap izWETH→izUSDC: {} izWETH sold, {} izUSDC received", 
                 izweth_amount, izusdc_amount);
@@ -577,9 +662,13 @@ impl SushiSwapProcessor {
             let izusdc_amount = amount_y_in / &self.divisors.usdc;
             let izweth_amount = amount_x_out / &self.divisors.weth;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.usdc_volume_24h += &izusdc_amount;  // Save izUSDC as USDC volume
             pool_entry.weth_volume_24h += &izweth_amount;  // Save izWETH as WETH volume
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdc_sell_volume_24h += &izusdc_amount;  // USDC is being sold
+            pool_entry.weth_buy_volume_24h += &izweth_amount;  // WETH is being bought
             
             info!("📈 SushiSwap izUSDC→izWETH: {} izUSDC sold, {} izWETH received", 
                 izusdc_amount, izweth_amount);
@@ -601,9 +690,13 @@ impl SushiSwapProcessor {
             let whusdc_amount = amount_x_in / &self.divisors.usdc;
             let izusdc_amount = amount_y_out / &self.divisors.usdc;
             
-            // Count BOTH tokens as USDC volume since both are USDC variants
+            // Count BOTH tokens as USDC volume since both are USDC variants (for backward compatibility)
             pool_entry.usdc_volume_24h += &whusdc_amount;  // whUSDC as USDC
             pool_entry.usdc_volume_24h += &izusdc_amount;  // izUSDC as USDC
+            
+            // Update buy/sell volumes - both are USDC variants
+            pool_entry.usdc_sell_volume_24h += &whusdc_amount;  // whUSDC is being sold
+            pool_entry.usdc_buy_volume_24h += &izusdc_amount;  // izUSDC is being bought
             
             info!("📉 SushiSwap whUSDC→izUSDC: {} whUSDC sold, {} izUSDC received", 
                 whusdc_amount, izusdc_amount);
@@ -613,9 +706,13 @@ impl SushiSwapProcessor {
             let izusdc_amount = amount_y_in / &self.divisors.usdc;
             let whusdc_amount = amount_x_out / &self.divisors.usdc;
             
-            // Count BOTH tokens as USDC volume since both are USDC variants
+            // Count BOTH tokens as USDC volume since both are USDC variants (for backward compatibility)
             pool_entry.usdc_volume_24h += &izusdc_amount;  // izUSDC as USDC
             pool_entry.usdc_volume_24h += &whusdc_amount;  // whUSDC as USDC
+            
+            // Update buy/sell volumes - both are USDC variants
+            pool_entry.usdc_sell_volume_24h += &izusdc_amount;  // izUSDC is being sold
+            pool_entry.usdc_buy_volume_24h += &whusdc_amount;  // whUSDC is being bought
             
             info!("📈 SushiSwap izUSDC→whUSDC: {} izUSDC sold, {} whUSDC received", 
                 izusdc_amount, whusdc_amount);
@@ -637,9 +734,13 @@ impl SushiSwapProcessor {
             let izusdc_amount = amount_x_in / &self.divisors.usdc;
             let whusdc_amount = amount_y_out / &self.divisors.usdc;
             
-            // Count BOTH tokens as USDC volume since both are USDC variants
+            // Count BOTH tokens as USDC volume since both are USDC variants (for backward compatibility)
             pool_entry.usdc_volume_24h += &izusdc_amount;  // izUSDC as USDC
             pool_entry.usdc_volume_24h += &whusdc_amount;  // whUSDC as USDC
+            
+            // Update buy/sell volumes - both are USDC variants
+            pool_entry.usdc_sell_volume_24h += &izusdc_amount;  // izUSDC is being sold
+            pool_entry.usdc_buy_volume_24h += &whusdc_amount;  // whUSDC is being bought
             
             info!("📉 SushiSwap izUSDC→whUSDC: {} izUSDC sold, {} whUSDC received", 
                 izusdc_amount, whusdc_amount);
@@ -649,9 +750,13 @@ impl SushiSwapProcessor {
             let whusdc_amount = amount_y_in / &self.divisors.usdc;
             let izusdc_amount = amount_x_out / &self.divisors.usdc;
             
-            // Count BOTH tokens as USDC volume since both are USDC variants
+            // Count BOTH tokens as USDC volume since both are USDC variants (for backward compatibility)
             pool_entry.usdc_volume_24h += &whusdc_amount;  // whUSDC as USDC
             pool_entry.usdc_volume_24h += &izusdc_amount;  // izUSDC as USDC
+            
+            // Update buy/sell volumes - both are USDC variants
+            pool_entry.usdc_sell_volume_24h += &whusdc_amount;  // whUSDC is being sold
+            pool_entry.usdc_buy_volume_24h += &izusdc_amount;  // izUSDC is being bought
             
             info!("📈 SushiSwap whUSDC→izUSDC: {} whUSDC sold, {} izUSDC received", 
                 whusdc_amount, izusdc_amount);
@@ -673,9 +778,13 @@ impl SushiSwapProcessor {
             let izusdc_amount = amount_x_in / &self.divisors.usdc;
             let izweth_amount = amount_y_out / &self.divisors.weth;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.usdc_volume_24h += &izusdc_amount;  // Save izUSDC as USDC volume
             pool_entry.weth_volume_24h += &izweth_amount;  // Save izWETH as WETH volume
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.usdc_sell_volume_24h += &izusdc_amount;  // USDC is being sold
+            pool_entry.weth_buy_volume_24h += &izweth_amount;  // WETH is being bought
             
             info!("📉 SushiSwap izUSDC→izWETH: {} izUSDC sold, {} izWETH received", 
                 izusdc_amount, izweth_amount);
@@ -685,9 +794,13 @@ impl SushiSwapProcessor {
             let izweth_amount = amount_y_in / &self.divisors.weth;
             let izusdc_amount = amount_x_out / &self.divisors.usdc;
             
-            // Save BOTH token volumes like Cellana/Thala
+            // Save BOTH token volumes like Cellana/Thala (for backward compatibility)
             pool_entry.weth_volume_24h += &izweth_amount;  // Save izWETH as WETH volume
             pool_entry.usdc_volume_24h += &izusdc_amount;  // Save izUSDC as USDC volume
+            
+            // Update buy/sell volumes based on transaction direction
+            pool_entry.weth_sell_volume_24h += &izweth_amount;  // WETH is being sold
+            pool_entry.usdc_buy_volume_24h += &izusdc_amount;  // USDC is being bought
             
             info!("📈 SushiSwap izWETH→izUSDC: {} izWETH sold, {} izUSDC received", 
                 izweth_amount, izusdc_amount);

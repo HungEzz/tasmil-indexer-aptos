@@ -3,7 +3,7 @@
 
 #![allow(clippy::extra_unused_lifetimes)]
 
-use crate::schema::apt_data;
+use crate::db::postgres::schema::apt_data;
 use bigdecimal::BigDecimal;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;

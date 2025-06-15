@@ -27,6 +27,12 @@ pub struct PoolVolume {
     pub apt_fee_24h: BigDecimal,
     pub usdc_fee_24h: BigDecimal,
     pub usdt_fee_24h: BigDecimal,
+    pub apt_buy_volume_24h: BigDecimal,
+    pub apt_sell_volume_24h: BigDecimal,
+    pub usdc_buy_volume_24h: BigDecimal,
+    pub usdc_sell_volume_24h: BigDecimal,
+    pub usdt_buy_volume_24h: BigDecimal,
+    pub usdt_sell_volume_24h: BigDecimal,
 }
 
 // Cached decimal divisors for performance
@@ -63,6 +69,12 @@ impl Default for PoolVolume {
             apt_fee_24h: BigDecimal::from(0),
             usdc_fee_24h: BigDecimal::from(0),
             usdt_fee_24h: BigDecimal::from(0),
+            apt_buy_volume_24h: BigDecimal::from(0),
+            apt_sell_volume_24h: BigDecimal::from(0),
+            usdc_buy_volume_24h: BigDecimal::from(0),
+            usdc_sell_volume_24h: BigDecimal::from(0),
+            usdt_buy_volume_24h: BigDecimal::from(0),
+            usdt_sell_volume_24h: BigDecimal::from(0),
         }
     }
 }
@@ -190,29 +202,39 @@ impl CellanaProcessor {
         fee_rate: &BigDecimal,
     ) {
         if swap_data.from_token == APT_COIN_TYPE && swap_data.to_token == USDC_COIN_TYPE {
-            // APT -> USDC
+            // APT -> USDC: User sells APT, buys USDC
             let apt_amount = raw_amount_in / &self.divisors.apt;
             let usdc_amount = raw_amount_out / &self.divisors.usdc;
             let apt_fee = &apt_amount * fee_rate;
             let apt_net_volume = &apt_amount - &apt_fee;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += apt_net_volume.clone();
             pool_entry.usdc_volume_24h += usdc_amount.clone();
             pool_entry.apt_fee_24h += apt_fee.clone();
+            
+            // Update buy/sell volumes based on actual transaction direction
+            pool_entry.apt_sell_volume_24h += apt_net_volume.clone(); // APT is being sold
+            pool_entry.usdc_buy_volume_24h += usdc_amount.clone();    // USDC is being bought
             
             info!("📈 Cellana APT->USDC: {} APT sold, {} USDC bought, {} APT fee ({}bps)", 
                 apt_amount, usdc_amount, apt_fee, swap_data.swap_fee_bps);
                 
         } else if swap_data.from_token == USDC_COIN_TYPE && swap_data.to_token == APT_COIN_TYPE {
-            // USDC -> APT
+            // USDC -> APT: User sells USDC, buys APT
             let usdc_amount = raw_amount_in / &self.divisors.usdc;
             let apt_amount = raw_amount_out / &self.divisors.apt;
             let usdc_fee = &usdc_amount * fee_rate;
             let usdc_net_volume = &usdc_amount - &usdc_fee;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += apt_amount.clone();
             pool_entry.usdc_volume_24h += usdc_net_volume.clone();
             pool_entry.usdc_fee_24h += usdc_fee.clone();
+            
+            // Update buy/sell volumes based on actual transaction direction
+            pool_entry.usdc_sell_volume_24h += usdc_net_volume.clone(); // USDC is being sold
+            pool_entry.apt_buy_volume_24h += apt_amount.clone();        // APT is being bought
             
             info!("📉 Cellana USDC->APT: {} USDC sold, {} APT bought, {} USDC fee ({}bps)", 
                 usdc_amount, apt_amount, usdc_fee, swap_data.swap_fee_bps);
@@ -228,29 +250,39 @@ impl CellanaProcessor {
         fee_rate: &BigDecimal,
     ) {
         if swap_data.from_token == USDT_COIN_TYPE && swap_data.to_token == USDC_COIN_TYPE {
-            // USDT -> USDC
+            // USDT -> USDC: User sells USDT, buys USDC
             let usdt_amount = raw_amount_in / &self.divisors.usdt;
             let usdc_amount = raw_amount_out / &self.divisors.usdc;
             let usdt_fee = &usdt_amount * fee_rate;
             let usdt_net_volume = &usdt_amount - &usdt_fee;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.usdt_volume_24h += usdt_net_volume.clone();
             pool_entry.usdc_volume_24h += usdc_amount.clone();
             pool_entry.usdt_fee_24h += usdt_fee.clone();
+            
+            // Update buy/sell volumes based on actual transaction direction
+            pool_entry.usdt_sell_volume_24h += usdt_net_volume.clone(); // USDT is being sold
+            pool_entry.usdc_buy_volume_24h += usdc_amount.clone();      // USDC is being bought
             
             info!("💰 Cellana USDT->USDC: {} USDT sold, {} USDC bought, {} USDT fee ({}bps)", 
                 usdt_amount, usdc_amount, usdt_fee, swap_data.swap_fee_bps);
                 
         } else if swap_data.from_token == USDC_COIN_TYPE && swap_data.to_token == USDT_COIN_TYPE {
-            // USDC -> USDT
+            // USDC -> USDT: User sells USDC, buys USDT
             let usdc_amount = raw_amount_in / &self.divisors.usdc;
             let usdt_amount = raw_amount_out / &self.divisors.usdt;
             let usdc_fee = &usdc_amount * fee_rate;
             let usdc_net_volume = &usdc_amount - &usdc_fee;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.usdt_volume_24h += usdt_amount.clone();
             pool_entry.usdc_volume_24h += usdc_net_volume.clone();
             pool_entry.usdc_fee_24h += usdc_fee.clone();
+            
+            // Update buy/sell volumes based on actual transaction direction
+            pool_entry.usdc_sell_volume_24h += usdc_net_volume.clone(); // USDC is being sold
+            pool_entry.usdt_buy_volume_24h += usdt_amount.clone();      // USDT is being bought
             
             info!("💸 Cellana USDC->USDT: {} USDC sold, {} USDT bought, {} USDC fee ({}bps)", 
                 usdc_amount, usdt_amount, usdc_fee, swap_data.swap_fee_bps);
@@ -266,29 +298,39 @@ impl CellanaProcessor {
         fee_rate: &BigDecimal,
     ) {
         if swap_data.from_token == APT_COIN_TYPE && swap_data.to_token == USDT_COIN_TYPE {
-            // APT -> USDT
+            // APT -> USDT: User sells APT, buys USDT
             let apt_amount = raw_amount_in / &self.divisors.apt;
             let usdt_amount = raw_amount_out / &self.divisors.usdt;
             let apt_fee = &apt_amount * fee_rate;
             let apt_net_volume = &apt_amount - &apt_fee;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += apt_net_volume.clone();
             pool_entry.usdt_volume_24h += usdt_amount.clone();
             pool_entry.apt_fee_24h += apt_fee.clone();
+            
+            // Update buy/sell volumes based on actual transaction direction
+            pool_entry.apt_sell_volume_24h += apt_net_volume.clone(); // APT is being sold
+            pool_entry.usdt_buy_volume_24h += usdt_amount.clone();    // USDT is being bought
             
             info!("📈 Cellana APT->USDT: {} APT sold, {} USDT bought, {} APT fee ({}bps)", 
                 apt_amount, usdt_amount, apt_fee, swap_data.swap_fee_bps);
                 
         } else if swap_data.from_token == USDT_COIN_TYPE && swap_data.to_token == APT_COIN_TYPE {
-            // USDT -> APT
+            // USDT -> APT: User sells USDT, buys APT
             let usdt_amount = raw_amount_in / &self.divisors.usdt;
             let apt_amount = raw_amount_out / &self.divisors.apt;
             let usdt_fee = &usdt_amount * fee_rate;
             let usdt_net_volume = &usdt_amount - &usdt_fee;
             
+            // Update total volumes (for backward compatibility)
             pool_entry.apt_volume_24h += apt_amount.clone();
             pool_entry.usdt_volume_24h += usdt_net_volume.clone();
             pool_entry.usdt_fee_24h += usdt_fee.clone();
+            
+            // Update buy/sell volumes based on actual transaction direction
+            pool_entry.usdt_sell_volume_24h += usdt_net_volume.clone(); // USDT is being sold
+            pool_entry.apt_buy_volume_24h += apt_amount.clone();        // APT is being bought
             
             info!("📉 Cellana USDT->APT: {} USDT sold, {} APT bought, {} USDT fee ({}bps)", 
                 usdt_amount, apt_amount, usdt_fee, swap_data.swap_fee_bps);

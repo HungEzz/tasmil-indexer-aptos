@@ -1,4 +1,7 @@
-use crate::db::common::models::apt_models::NewAptData;
+use crate::db::common::models::{
+    apt_models::NewAptData, 
+    coin_volume_models::NewCoinVolume24h
+};
 use anyhow::Result;
 use aptos_indexer_processor_sdk::{
     aptos_protos::transaction::v1::{transaction::TxnData, Transaction},
@@ -56,22 +59,30 @@ impl VolumeCalculator {
     }
 }
 
+#[derive(Debug)]
+pub struct VolumeData {
+    pub apt_data: Vec<NewAptData>,
+    pub coin_volume_data: Vec<NewCoinVolume24h>,
+}
+
 #[async_trait]
 impl Processable for VolumeCalculator {
     type Input = Vec<Transaction>;
-    type Output = Vec<NewAptData>;
+    type Output = VolumeData;
     type RunType = AsyncRunType;
 
     async fn process(
         &mut self,
         item: TransactionContext<Vec<Transaction>>,
-    ) -> Result<Option<TransactionContext<Vec<NewAptData>>>, ProcessorError> {
+    ) -> Result<Option<TransactionContext<VolumeData>>, ProcessorError> {
         let transactions = item.data;
-      
         if transactions.is_empty() {
             debug!("📭 No transactions to process");
             return Ok(Some(TransactionContext {
-                data: vec![],
+                data: VolumeData {
+                    apt_data: vec![],
+                    coin_volume_data: vec![],
+                },
                 metadata: item.metadata,
             }));
         }
@@ -83,6 +94,9 @@ impl Processable for VolumeCalculator {
         let mut liquid_volumes: HashMap<String, LiquidPoolVolume> = HashMap::new();
 
         for txn in &transactions {
+            info!("--------------------------------");
+            info!("🔍 Processing {:?} ", txn);
+            info!("--------------------------------");
             // Skip transactions not within 24h
             if !is_within_24h(txn.timestamp.as_ref().unwrap().seconds) {
                 continue;
@@ -190,7 +204,7 @@ impl Processable for VolumeCalculator {
         let mut cellana_total_usdc_fee = BigDecimal::zero();
         let mut cellana_total_usdt_fee = BigDecimal::zero();
 
-        for (_, pool_volume) in cellana_volumes {
+        for (_, pool_volume) in &cellana_volumes {
             cellana_total_apt_volume += &pool_volume.apt_volume_24h;
             cellana_total_usdc_volume += &pool_volume.usdc_volume_24h;
             cellana_total_usdt_volume += &pool_volume.usdt_volume_24h;
@@ -230,7 +244,7 @@ impl Processable for VolumeCalculator {
         let mut thala_total_usdc_fee = BigDecimal::zero();
         let mut thala_total_usdt_fee = BigDecimal::zero();
 
-        for (_, pool_volume) in thala_volumes {
+        for (_, pool_volume) in &thala_volumes {
             thala_total_apt_volume += &pool_volume.apt_volume_24h;
             thala_total_usdc_volume += &pool_volume.usdc_volume_24h;
             thala_total_usdt_volume += &pool_volume.usdt_volume_24h;
@@ -264,14 +278,14 @@ impl Processable for VolumeCalculator {
 
         // Aggregate SushiSwap volumes across all pools
         let mut sushi_total_apt_volume = BigDecimal::zero();
-        let mut sushi_total_usdt_volume = BigDecimal::zero();
         let mut sushi_total_usdc_volume = BigDecimal::zero();
+        let mut sushi_total_usdt_volume = BigDecimal::zero();
         let mut sushi_total_weth_volume = BigDecimal::zero();
 
-        for (_, pool_volume) in sushi_volumes {
+        for (_, pool_volume) in &sushi_volumes {
             sushi_total_apt_volume += &pool_volume.apt_volume_24h;
-            sushi_total_usdt_volume += &pool_volume.usdt_volume_24h;
             sushi_total_usdc_volume += &pool_volume.usdc_volume_24h;
+            sushi_total_usdt_volume += &pool_volume.usdt_volume_24h;
             sushi_total_weth_volume += &pool_volume.weth_volume_24h;
         }
 
@@ -284,13 +298,13 @@ impl Processable for VolumeCalculator {
             let apt_data = NewAptData {
                 protocol_name: "sushiswap".to_string(),
                 apt_volume_24h: Some(sushi_total_apt_volume.clone()),
-                usdc_volume_24h: Some(sushi_total_usdc_volume.clone()),  // Include USDC volume
+                usdc_volume_24h: Some(sushi_total_usdc_volume.clone()),
                 usdt_volume_24h: Some(sushi_total_usdt_volume.clone()),
-                weth_volume_24h: Some(sushi_total_weth_volume.clone()),  // Include WETH volume
-                apt_fee_24h: None, // SushiSwap doesn't have fees
-                usdc_fee_24h: None, // SushiSwap doesn't have fees
-                usdt_fee_24h: None, // SushiSwap doesn't have fees
-                weth_fee_24h: None, // SushiSwap doesn't have fees
+                weth_volume_24h: Some(sushi_total_weth_volume.clone()),
+                apt_fee_24h: None,
+                usdc_fee_24h: None,
+                usdt_fee_24h: None,
+                weth_fee_24h: None,
             };
             
             info!("💾 Created SushiSwap aggregated record: APT={:?}, USDT={:?}, USDC={:?}, WETH={:?}", 
@@ -303,40 +317,174 @@ impl Processable for VolumeCalculator {
         let mut liquid_total_apt_volume = BigDecimal::zero();
         let mut liquid_total_usdc_volume = BigDecimal::zero();
         let mut liquid_total_usdt_volume = BigDecimal::zero();
+        let mut liquid_total_weth_volume = BigDecimal::zero();
 
-        for (_, pool_volume) in liquid_volumes {
+        for (_, pool_volume) in &liquid_volumes {
             liquid_total_apt_volume += &pool_volume.apt_volume_24h;
             liquid_total_usdc_volume += &pool_volume.usdc_volume_24h;
             liquid_total_usdt_volume += &pool_volume.usdt_volume_24h;
+            liquid_total_weth_volume += &pool_volume.weth_volume_24h;
         }
 
         // Create LiquidSwap result if there's any volume
         if liquid_total_apt_volume > BigDecimal::zero() || 
            liquid_total_usdc_volume > BigDecimal::zero() ||
-           liquid_total_usdt_volume > BigDecimal::zero() {
+           liquid_total_usdt_volume > BigDecimal::zero() ||
+           liquid_total_weth_volume > BigDecimal::zero() {
             
             let apt_data = NewAptData {
                 protocol_name: "liquidswap".to_string(),
                 apt_volume_24h: Some(liquid_total_apt_volume.clone()),
-                usdc_volume_24h: Some(liquid_total_usdc_volume.clone()),  // izUSDC stored as USDC
-                usdt_volume_24h: Some(liquid_total_usdt_volume.clone()),  // izUSDT stored as USDT
-                weth_volume_24h: None, // LiquidSwap doesn't trade WETH in our target pairs
-                apt_fee_24h: None, // LiquidSwap doesn't have fees tracked yet
-                usdc_fee_24h: None, // LiquidSwap doesn't have fees tracked yet
-                usdt_fee_24h: None, // LiquidSwap doesn't have fees tracked yet
-                weth_fee_24h: None, // LiquidSwap doesn't have fees tracked yet
+                usdc_volume_24h: Some(liquid_total_usdc_volume.clone()),
+                usdt_volume_24h: Some(liquid_total_usdt_volume.clone()),
+                weth_volume_24h: Some(liquid_total_weth_volume.clone()),
+                apt_fee_24h: None,
+                usdc_fee_24h: None,
+                usdt_fee_24h: None,
+                weth_fee_24h: None,
             };
             
-            info!("💾 Created LiquidSwap aggregated record: APT={:?}, USDC={:?}, USDT={:?}", 
-                apt_data.apt_volume_24h, apt_data.usdc_volume_24h, apt_data.usdt_volume_24h);
+            info!("💾 Created LiquidSwap aggregated record: APT={:?}, USDC={:?}, USDT={:?}, WETH={:?}", 
+                apt_data.apt_volume_24h, apt_data.usdc_volume_24h, apt_data.usdt_volume_24h, apt_data.weth_volume_24h);
             
             results.push(apt_data);
         }
 
         info!("✅ Successfully processed {} records in batch", results.len());
 
+        // Collect buy/sell volumes from all processors and aggregate by coin
+        let mut coin_volume_data = Vec::new();
+        let mut coin_aggregates: std::collections::HashMap<String, (BigDecimal, BigDecimal)> = std::collections::HashMap::new();
+        let zero_decimal = BigDecimal::zero();
+
+        // Aggregate buy/sell volumes from Cellana
+        for (_, pool_volume) in &cellana_volumes {
+            // APT buy/sell volumes
+            if pool_volume.apt_buy_volume_24h > zero_decimal || pool_volume.apt_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("APT".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.apt_buy_volume_24h;
+                entry.1 += &pool_volume.apt_sell_volume_24h;
+            }
+            
+            // USDC buy/sell volumes
+            if pool_volume.usdc_buy_volume_24h > zero_decimal || pool_volume.usdc_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("USDC".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.usdc_buy_volume_24h;
+                entry.1 += &pool_volume.usdc_sell_volume_24h;
+            }
+            
+            // USDT buy/sell volumes
+            if pool_volume.usdt_buy_volume_24h > zero_decimal || pool_volume.usdt_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("USDT".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.usdt_buy_volume_24h;
+                entry.1 += &pool_volume.usdt_sell_volume_24h;
+            }
+        }
+
+        // Aggregate buy/sell volumes from Thala
+        for (_, pool_volume) in &thala_volumes {
+            // APT buy/sell volumes
+            if pool_volume.apt_buy_volume_24h > zero_decimal || pool_volume.apt_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("APT".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.apt_buy_volume_24h;
+                entry.1 += &pool_volume.apt_sell_volume_24h;
+            }
+            
+            // USDC buy/sell volumes
+            if pool_volume.usdc_buy_volume_24h > zero_decimal || pool_volume.usdc_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("USDC".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.usdc_buy_volume_24h;
+                entry.1 += &pool_volume.usdc_sell_volume_24h;
+            }
+            
+            // USDT buy/sell volumes
+            if pool_volume.usdt_buy_volume_24h > zero_decimal || pool_volume.usdt_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("USDT".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.usdt_buy_volume_24h;
+                entry.1 += &pool_volume.usdt_sell_volume_24h;
+            }
+        }
+
+        // Aggregate buy/sell volumes from SushiSwap
+        for (_, pool_volume) in &sushi_volumes {
+            // APT buy/sell volumes
+            if pool_volume.apt_buy_volume_24h > zero_decimal || pool_volume.apt_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("APT".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.apt_buy_volume_24h;
+                entry.1 += &pool_volume.apt_sell_volume_24h;
+            }
+            
+            // USDC buy/sell volumes
+            if pool_volume.usdc_buy_volume_24h > zero_decimal || pool_volume.usdc_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("USDC".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.usdc_buy_volume_24h;
+                entry.1 += &pool_volume.usdc_sell_volume_24h;
+            }
+            
+            // USDT buy/sell volumes
+            if pool_volume.usdt_buy_volume_24h > zero_decimal || pool_volume.usdt_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("USDT".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.usdt_buy_volume_24h;
+                entry.1 += &pool_volume.usdt_sell_volume_24h;
+            }
+            
+            // WETH buy/sell volumes
+            if pool_volume.weth_buy_volume_24h > zero_decimal || pool_volume.weth_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("WETH".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.weth_buy_volume_24h;
+                entry.1 += &pool_volume.weth_sell_volume_24h;
+            }
+        }
+
+        // Aggregate buy/sell volumes from LiquidSwap
+        for (_, pool_volume) in &liquid_volumes {
+            // APT buy/sell volumes
+            if pool_volume.apt_buy_volume_24h > zero_decimal || pool_volume.apt_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("APT".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.apt_buy_volume_24h;
+                entry.1 += &pool_volume.apt_sell_volume_24h;
+            }
+            
+            // USDC buy/sell volumes
+            if pool_volume.usdc_buy_volume_24h > zero_decimal || pool_volume.usdc_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("USDC".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.usdc_buy_volume_24h;
+                entry.1 += &pool_volume.usdc_sell_volume_24h;
+            }
+            
+            // USDT buy/sell volumes
+            if pool_volume.usdt_buy_volume_24h > zero_decimal || pool_volume.usdt_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("USDT".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.usdt_buy_volume_24h;
+                entry.1 += &pool_volume.usdt_sell_volume_24h;
+            }
+            
+            // WETH buy/sell volumes
+            if pool_volume.weth_buy_volume_24h > zero_decimal || pool_volume.weth_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("WETH".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.weth_buy_volume_24h;
+                entry.1 += &pool_volume.weth_sell_volume_24h;
+            }
+        }
+
+        // Convert aggregated data to NewCoinVolume24h records
+        for (coin, (total_buy_volume, total_sell_volume)) in coin_aggregates {
+            if total_buy_volume > zero_decimal || total_sell_volume > zero_decimal {
+                coin_volume_data.push(NewCoinVolume24h {
+                    coin,
+                    buy_volume: Some(total_buy_volume),
+                    sell_volume: Some(total_sell_volume),
+                });
+            }
+        }
+
+        info!("🪙 Collected {} aggregated coin volume records", coin_volume_data.len());
+
         Ok(Some(TransactionContext {
-            data: results,
+            data: VolumeData {
+                apt_data: results,
+                coin_volume_data,
+            },
             metadata: item.metadata,
         }))
     }
