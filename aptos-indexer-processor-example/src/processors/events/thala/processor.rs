@@ -22,13 +22,6 @@ impl DecimalDivisors {
     }
 }
 
-// Pool addresses as a constant array for efficient lookup
-const TARGET_POOLS: [&str; 3] = [
-    THALA_APT_USDC_POOL_ADDRESS,
-    THALA_USDT_USDC_POOL_ADDRESS,
-    THALA_APT_USDT_POOL_ADDRESS,
-];
-
 #[derive(Debug)]
 pub struct SwapData {
     pub amount_in: String,
@@ -232,7 +225,8 @@ impl ThalaProcessor {
                 ).await;
             },
             _ => {
-                debug!("🔄 Unsupported Thala swap pair: {} -> {}", swap_data.from_token, swap_data.to_token);
+                debug!("🔄 Unsupported Thala swap pair: {} -> {} (pool: {})", 
+                    swap_data.from_token, swap_data.to_token, swap_data.pool);
             }
         }
     }
@@ -299,10 +293,5 @@ impl ThalaProcessor {
 
         info!("{} Thala {}: {} {} sold (net: {}), {} {} bought, {} {} fee", 
             emoji, swap_type, from_amount, from_currency, net_volume, to_amount, to_currency, fee_amount, from_currency);
-    }
-
-    #[inline]
-    pub fn is_target_pool(&self, pool_address: &str) -> bool {
-        TARGET_POOLS.contains(&pool_address)
     }
 } 

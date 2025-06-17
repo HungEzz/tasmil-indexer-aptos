@@ -52,33 +52,6 @@ impl DecimalDivisors {
     }
 }
 
-// Pool addresses as a constant array for efficient lookup
-pub const TARGET_POOLS: &[&str] = &[
-    APT_USDC_POOL_ADDRESS,
-    USDT_USDC_POOL_ADDRESS,
-    APT_USDT_POOL_ADDRESS,
-];
-
-impl Default for PoolVolume {
-    fn default() -> Self {
-        Self {
-            pool: String::new(),
-            apt_volume_24h: BigDecimal::from(0),
-            usdc_volume_24h: BigDecimal::from(0),
-            usdt_volume_24h: BigDecimal::from(0),
-            apt_fee_24h: BigDecimal::from(0),
-            usdc_fee_24h: BigDecimal::from(0),
-            usdt_fee_24h: BigDecimal::from(0),
-            apt_buy_volume_24h: BigDecimal::from(0),
-            apt_sell_volume_24h: BigDecimal::from(0),
-            usdc_buy_volume_24h: BigDecimal::from(0),
-            usdc_sell_volume_24h: BigDecimal::from(0),
-            usdt_buy_volume_24h: BigDecimal::from(0),
-            usdt_sell_volume_24h: BigDecimal::from(0),
-        }
-    }
-}
-
 pub struct CellanaProcessor {
     divisors: DecimalDivisors,
 }
@@ -179,17 +152,25 @@ impl CellanaProcessor {
         let raw_amount_out = BigDecimal::from_str(&swap_data.amount_out).unwrap_or_else(|_| BigDecimal::zero());
         let fee_rate = BigDecimal::from(swap_data.swap_fee_bps) / BigDecimal::from(10000);
 
-        // Handle APT/USDC pool swaps
-        if swap_data.pool == APT_USDC_POOL_ADDRESS {
-            self.process_apt_usdc_swap(pool_entry, &swap_data, &raw_amount_in, &raw_amount_out, &fee_rate).await;
-        }
-        // Handle USDT/USDC pool swaps
-        else if swap_data.pool == USDT_USDC_POOL_ADDRESS {
-            self.process_usdt_usdc_swap(pool_entry, &swap_data, &raw_amount_in, &raw_amount_out, &fee_rate).await;
-        }
-        // Handle APT/USDT pool swaps
-        else if swap_data.pool == APT_USDT_POOL_ADDRESS {
-            self.process_apt_usdt_swap(pool_entry, &swap_data, &raw_amount_in, &raw_amount_out, &fee_rate).await;
+        // Process swaps dynamically based on token types instead of hardcoded pool addresses
+        match (swap_data.from_token.as_str(), swap_data.to_token.as_str()) {
+            // APT/USDC pairs
+            (APT_COIN_TYPE, USDC_COIN_TYPE) | (USDC_COIN_TYPE, APT_COIN_TYPE) => {
+                self.process_apt_usdc_swap(pool_entry, &swap_data, &raw_amount_in, &raw_amount_out, &fee_rate).await;
+            }
+            // USDT/USDC pairs  
+            (USDT_COIN_TYPE, USDC_COIN_TYPE) | (USDC_COIN_TYPE, USDT_COIN_TYPE) => {
+                self.process_usdt_usdc_swap(pool_entry, &swap_data, &raw_amount_in, &raw_amount_out, &fee_rate).await;
+            }
+            // APT/USDT pairs
+            (APT_COIN_TYPE, USDT_COIN_TYPE) | (USDT_COIN_TYPE, APT_COIN_TYPE) => {
+                self.process_apt_usdt_swap(pool_entry, &swap_data, &raw_amount_in, &raw_amount_out, &fee_rate).await;
+            }
+            // For other token pairs, log and skip for now
+            _ => {
+                debug!("🚫 Unsupported Cellana token pair: {} -> {} (pool: {})", 
+                    swap_data.from_token, swap_data.to_token, swap_data.pool);
+            }
         }
     }
 
@@ -336,8 +317,24 @@ impl CellanaProcessor {
                 usdt_amount, apt_amount, usdt_fee, swap_data.swap_fee_bps);
         }
     }
+}
 
-    pub fn is_target_pool(&self, pool_address: &str) -> bool {
-        TARGET_POOLS.contains(&pool_address)
+impl Default for PoolVolume {
+    fn default() -> Self {
+        Self {
+            pool: String::new(),
+            apt_volume_24h: BigDecimal::from(0),
+            usdc_volume_24h: BigDecimal::from(0),
+            usdt_volume_24h: BigDecimal::from(0),
+            apt_fee_24h: BigDecimal::from(0),
+            usdc_fee_24h: BigDecimal::from(0),
+            usdt_fee_24h: BigDecimal::from(0),
+            apt_buy_volume_24h: BigDecimal::from(0),
+            apt_sell_volume_24h: BigDecimal::from(0),
+            usdc_buy_volume_24h: BigDecimal::from(0),
+            usdc_sell_volume_24h: BigDecimal::from(0),
+            usdt_buy_volume_24h: BigDecimal::from(0),
+            usdt_sell_volume_24h: BigDecimal::from(0),
+        }
     }
 } 

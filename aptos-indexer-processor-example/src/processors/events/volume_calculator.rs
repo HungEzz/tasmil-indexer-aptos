@@ -21,12 +21,14 @@ use super::cellana::{CellanaProcessor, constants::CELLANA_SWAP_EVENT_TYPE};
 use super::thala::{ThalaProcessor, constants::THALA_SWAP_EVENT_TYPE};
 use super::sushiswap::SushiSwapProcessor;
 use super::liquidswap::LiquidSwapProcessor;
+use super::hyperion::{HyperionProcessor, constants::HYPERION_SWAP_EVENT_TYPE};
 
 // Re-export the processor types for internal use
 pub use super::cellana::processor::PoolVolume as CellanaPoolVolume;
 pub use super::thala::processor::PoolVolume as ThalaPoolVolume;
 pub use super::sushiswap::processor::SushiPoolVolume;
 pub use super::liquidswap::processor::LiquidPoolVolume;
+pub use super::hyperion::processor::PoolVolume as HyperionPoolVolume;
 
 // Helper function to check if a transaction is within the last 24 hours
 fn is_within_24h(txn_timestamp_seconds: i64) -> bool {
@@ -44,17 +46,19 @@ pub struct VolumeCalculator {
     thala_processor: ThalaProcessor,
     sushi_swap_processor: SushiSwapProcessor,
     liquid_swap_processor: LiquidSwapProcessor,
+    hyperion_processor: HyperionProcessor,
 }
 
 impl VolumeCalculator {
     pub fn new() -> Self {
         info!("🚀 Initializing VolumeCalculator with modular architecture");
-        info!("📊 Configured for Cellana, Thala, SushiSwap, and LiquidSwap volume tracking");
+        info!("📊 Configured for Cellana, Thala, SushiSwap, LiquidSwap, and Hyperion volume tracking");
         Self {
             cellana_processor: CellanaProcessor::new(),
             thala_processor: ThalaProcessor::new(),
             sushi_swap_processor: SushiSwapProcessor::new(),
             liquid_swap_processor: LiquidSwapProcessor::new(),
+            hyperion_processor: HyperionProcessor::new(),
         }
     }
 }
@@ -92,6 +96,7 @@ impl Processable for VolumeCalculator {
         let mut thala_volumes: HashMap<String, ThalaPoolVolume> = HashMap::new();
         let mut sushi_volumes: HashMap<String, SushiPoolVolume> = HashMap::new();
         let mut liquid_volumes: HashMap<String, LiquidPoolVolume> = HashMap::new();
+        let mut hyperion_volumes: HashMap<String, HyperionPoolVolume> = HashMap::new();
 
         for txn in &transactions {
             info!("--------------------------------");
@@ -127,10 +132,8 @@ impl Processable for VolumeCalculator {
                                 // Fill fee information
                                 swap_data.swap_fee_bps = self.cellana_processor.extract_swap_fee_bps(txn, &swap_data.pool);
                                 
-                                // Only process swaps from our target pools
-                                if self.cellana_processor.is_target_pool(&swap_data.pool) {
-                                    self.cellana_processor.process_swap(&mut cellana_volumes, swap_data).await;
-                                }
+                                // Process all Cellana swaps (removed target pool filter)
+                                self.cellana_processor.process_swap(&mut cellana_volumes, swap_data).await;
                             }
                         }
                     }
@@ -140,10 +143,8 @@ impl Processable for VolumeCalculator {
                         tracing::debug!("🔵 Processing Thala event: {}", event_type);
                         if let Ok(event_data) = serde_json::from_str::<serde_json::Value>(&event.data) {
                             if let Ok(swap_data) = self.thala_processor.extract_swap_data(&event_data) {
-                                // Only process swaps from our target pools
-                                if self.thala_processor.is_target_pool(&swap_data.pool) {
-                                    self.thala_processor.process_swap(&mut thala_volumes, swap_data).await;
-                                }
+                                // Process all Thala swaps (removed target pool filter)
+                                self.thala_processor.process_swap(&mut thala_volumes, swap_data).await;
                             }
                         }
                     }
@@ -183,10 +184,29 @@ impl Processable for VolumeCalculator {
                             }
                         }
                     }
+                    
+                    // Process Hyperion events
+                    else if event_type == HYPERION_SWAP_EVENT_TYPE {
+                        tracing::info!("🟡 FOUND HYPERION EVENT: {}", event_type);
+                        
+                        if let Ok(event_data) = serde_json::from_str::<serde_json::Value>(&event.data) {
+                            match self.hyperion_processor.extract_swap_data(&event_data) {
+                                Ok(swap_data) => {
+                                    tracing::info!("🔄 Processing Hyperion swap: {:?}", swap_data);
+                                    // Process all Hyperion swaps (removed target pool filter)
+                                    self.hyperion_processor.process_swap(&mut hyperion_volumes, swap_data).await;
+                                    tracing::info!("✅ Hyperion swap processed successfully");
+                                }
+                                Err(e) => {
+                                    tracing::error!("❌ Error extracting Hyperion data: {}", e);
+                                }
+                            }
+                        }
+                    }
                     else {
                         // Log non-matching events to help debug
                         if event_type.contains("swap") || event_type.contains("Swap") {
-                            tracing::info!("❓ Unknown swap event (not Cellana/Thala/SushiSwap/LiquidSwap): {}", event_type);
+                            tracing::info!("❓ Unknown swap event (not Cellana/Thala/SushiSwap/LiquidSwap/Hyperion): {}", event_type);
                         }
                     }
                 }
@@ -350,6 +370,47 @@ impl Processable for VolumeCalculator {
             results.push(apt_data);
         }
 
+        // Aggregate Hyperion volumes
+        let mut hyperion_total_apt_volume = BigDecimal::zero();
+        let mut hyperion_total_usdc_volume = BigDecimal::zero();
+        let mut hyperion_total_usdt_volume = BigDecimal::zero();
+        let mut hyperion_total_apt_fee = BigDecimal::zero();
+        let mut hyperion_total_usdc_fee = BigDecimal::zero();
+        let mut hyperion_total_usdt_fee = BigDecimal::zero();
+
+        for (_, pool_volume) in &hyperion_volumes {
+            hyperion_total_apt_volume += &pool_volume.apt_volume_24h;
+            hyperion_total_usdc_volume += &pool_volume.usdc_volume_24h;
+            hyperion_total_usdt_volume += &pool_volume.usdt_volume_24h;
+            hyperion_total_apt_fee += &pool_volume.apt_fee_24h;
+            hyperion_total_usdc_fee += &pool_volume.usdc_fee_24h;
+            hyperion_total_usdt_fee += &pool_volume.usdt_fee_24h;
+        }
+
+        // Create Hyperion result if there's any volume
+        if hyperion_total_apt_volume > BigDecimal::zero() || 
+           hyperion_total_usdc_volume > BigDecimal::zero() || 
+           hyperion_total_usdt_volume > BigDecimal::zero() {
+            
+            let apt_data = NewAptData {
+                protocol_name: "hyperion".to_string(),
+                apt_volume_24h: Some(hyperion_total_apt_volume.clone()),
+                usdc_volume_24h: Some(hyperion_total_usdc_volume.clone()),
+                usdt_volume_24h: Some(hyperion_total_usdt_volume.clone()),
+                weth_volume_24h: None, // Hyperion doesn't support WETH
+                apt_fee_24h: Some(hyperion_total_apt_fee.clone()),
+                usdc_fee_24h: Some(hyperion_total_usdc_fee.clone()),
+                usdt_fee_24h: Some(hyperion_total_usdt_fee.clone()),
+                weth_fee_24h: None, // Hyperion doesn't support WETH
+            };
+            
+            info!("💾 Created Hyperion aggregated record: APT={:?}, USDC={:?}, USDT={:?}, APT_fee={:?}, USDC_fee={:?}, USDT_fee={:?}", 
+                apt_data.apt_volume_24h, apt_data.usdc_volume_24h, apt_data.usdt_volume_24h, 
+                apt_data.apt_fee_24h, apt_data.usdc_fee_24h, apt_data.usdt_fee_24h);
+            
+            results.push(apt_data);
+        }
+
         info!("✅ Successfully processed {} records in batch", results.len());
 
         // Collect buy/sell volumes from all processors and aggregate by coin
@@ -464,6 +525,30 @@ impl Processable for VolumeCalculator {
                 let entry = coin_aggregates.entry("WETH".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
                 entry.0 += &pool_volume.weth_buy_volume_24h;
                 entry.1 += &pool_volume.weth_sell_volume_24h;
+            }
+        }
+
+        // Aggregate buy/sell volumes from Hyperion
+        for (_, pool_volume) in &hyperion_volumes {
+            // APT buy/sell volumes
+            if pool_volume.apt_buy_volume_24h > zero_decimal || pool_volume.apt_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("APT".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.apt_buy_volume_24h;
+                entry.1 += &pool_volume.apt_sell_volume_24h;
+            }
+            
+            // USDC buy/sell volumes
+            if pool_volume.usdc_buy_volume_24h > zero_decimal || pool_volume.usdc_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("USDC".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.usdc_buy_volume_24h;
+                entry.1 += &pool_volume.usdc_sell_volume_24h;
+            }
+            
+            // USDT buy/sell volumes
+            if pool_volume.usdt_buy_volume_24h > zero_decimal || pool_volume.usdt_sell_volume_24h > zero_decimal {
+                let entry = coin_aggregates.entry("USDT".to_string()).or_insert((zero_decimal.clone(), zero_decimal.clone()));
+                entry.0 += &pool_volume.usdt_buy_volume_24h;
+                entry.1 += &pool_volume.usdt_sell_volume_24h;
             }
         }
 

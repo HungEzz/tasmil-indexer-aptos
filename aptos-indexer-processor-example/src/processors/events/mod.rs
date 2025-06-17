@@ -3,6 +3,7 @@ pub mod cellana;
 pub mod thala;
 pub mod sushiswap;
 pub mod liquidswap;
+pub mod hyperion;
 pub mod swap_processor;
 
 // Re-export main components

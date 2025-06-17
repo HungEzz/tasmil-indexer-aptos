@@ -229,9 +229,6 @@ impl TasmilProcessor {
         // After updating individual protocols, calculate and update the aggregated "aptos" total
         self.upsert_aptos_aggregated_data().await?;
         
-        // Process coin buy/sell volumes
-        self.process_coin_volumes(&volume_data).await?;
-        
         Ok(())
     }
 
@@ -245,7 +242,7 @@ impl TasmilProcessor {
         info!("🔄 Calculating aggregated data for 'aptos' protocol from dapps...");
 
         // Define the dapps to aggregate
-        let dapp_names = vec!["sushiswap", "cellana", "thala", "liquidswap"];
+        let dapp_names = vec!["sushiswap", "cellana", "thala", "liquidswap", "hyperion"];
         
         // Get data for all dapps
         let dapp_data: Vec<AptData> = apt_data::table
@@ -418,84 +415,6 @@ impl TasmilProcessor {
                 info!("✅ Volume data is recent (last update: {}), continuing accumulation", 
                     latest_utc.format("%Y-%m-%d %H:%M:%S UTC"));
             }
-        }
-
-        Ok(())
-    }
-
-    async fn process_coin_volumes(&self, volume_data: &[NewAptData]) -> Result<(), ProcessorError> {
-        if volume_data.is_empty() {
-            return Ok(());
-        }
-
-        info!("🪙 Processing coin buy/sell volumes for {} protocols", volume_data.len());
-
-        let mut coin_volume_records: Vec<NewCoinVolume24h> = Vec::new();
-
-        for record in volume_data {
-            let zero_decimal = BigDecimal::zero();
-
-            // Process each coin type based on volume data
-            // APT volumes
-            if let Some(apt_volume) = &record.apt_volume_24h {
-                if apt_volume > &zero_decimal {
-                    // TODO: Implement proper buy/sell tracking based on transaction direction
-                    // Currently splitting evenly as a placeholder. In the future, we should:
-                    // 1. Track actual transaction direction (token_in vs token_out) in VolumeCalculator
-                    // 2. Pass buy/sell volumes separately from each processor
-                    // 3. Aggregate buy/sell volumes correctly here
-                    let half_volume = apt_volume / BigDecimal::from(2);
-                    
-                    coin_volume_records.push(NewCoinVolume24h {
-                        coin: "APT".to_string(),
-                        buy_volume: Some(half_volume.clone()),
-                        sell_volume: Some(half_volume),
-                    });
-                }
-            }
-
-            // USDC volumes
-            if let Some(usdc_volume) = &record.usdc_volume_24h {
-                if usdc_volume > &zero_decimal {
-                    let half_volume = usdc_volume / BigDecimal::from(2);
-                    
-                    coin_volume_records.push(NewCoinVolume24h {
-                        coin: "USDC".to_string(),
-                        buy_volume: Some(half_volume.clone()),
-                        sell_volume: Some(half_volume),
-                    });
-                }
-            }
-
-            // USDT volumes
-            if let Some(usdt_volume) = &record.usdt_volume_24h {
-                if usdt_volume > &zero_decimal {
-                    let half_volume = usdt_volume / BigDecimal::from(2);
-                    
-                    coin_volume_records.push(NewCoinVolume24h {
-                        coin: "USDT".to_string(),
-                        buy_volume: Some(half_volume.clone()),
-                        sell_volume: Some(half_volume),
-                    });
-                }
-            }
-
-            // WETH volumes
-            if let Some(weth_volume) = &record.weth_volume_24h {
-                if weth_volume > &zero_decimal {
-                    let half_volume = weth_volume / BigDecimal::from(2);
-                    
-                    coin_volume_records.push(NewCoinVolume24h {
-                        coin: "WETH".to_string(),
-                        buy_volume: Some(half_volume.clone()),
-                        sell_volume: Some(half_volume),
-                    });
-                }
-            }
-        }
-
-        if !coin_volume_records.is_empty() {
-            self.upsert_coin_volumes(coin_volume_records).await?;
         }
 
         Ok(())
