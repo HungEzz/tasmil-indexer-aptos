@@ -227,6 +227,46 @@ impl HyperionProcessor {
                 info!("📉 Hyperion USDT→APT: {} USDT sold, {} APT received, fee: {} USDT", 
                     usdt_amount, apt_amount, usdt_fee);
             },
+            (APT_COIN_TYPE, USDC_COIN_TYPE) => {
+                // APT -> USDC swap
+                let apt_amount = &raw_amount_in / &self.divisors.apt;
+                let usdc_amount = &raw_amount_out / &self.divisors.usdc;
+                let apt_fee = &protocol_fee / &self.divisors.apt;
+
+                // Update volumes
+                pool_entry.apt_volume_24h += &apt_amount;
+                pool_entry.usdc_volume_24h += &usdc_amount;
+                
+                // Update fees (in APT as this is the input token)
+                pool_entry.apt_fee_24h += &apt_fee;
+                
+                // Update buy/sell volumes
+                pool_entry.apt_sell_volume_24h += &apt_amount;   // APT is being sold
+                pool_entry.usdc_buy_volume_24h += &usdc_amount;  // USDC is being bought
+
+                info!("📈 Hyperion APT→USDC: {} APT sold, {} USDC received, fee: {} APT", 
+                    apt_amount, usdc_amount, apt_fee);
+            },
+            (USDC_COIN_TYPE, APT_COIN_TYPE) => {
+                // USDC -> APT swap
+                let usdc_amount = &raw_amount_in / &self.divisors.usdc;
+                let apt_amount = &raw_amount_out / &self.divisors.apt;
+                let usdc_fee = &protocol_fee / &self.divisors.usdc;
+
+                // Update volumes
+                pool_entry.usdc_volume_24h += &usdc_amount;
+                pool_entry.apt_volume_24h += &apt_amount;
+                
+                // Update fees (in USDC as this is the input token)
+                pool_entry.usdc_fee_24h += &usdc_fee;
+                
+                // Update buy/sell volumes
+                pool_entry.usdc_sell_volume_24h += &usdc_amount;  // USDC is being sold
+                pool_entry.apt_buy_volume_24h += &apt_amount;     // APT is being bought
+
+                info!("📉 Hyperion USDC→APT: {} USDC sold, {} APT received, fee: {} USDC", 
+                    usdc_amount, apt_amount, usdc_fee);
+            },
             _ => {
                 debug!("🚫 Unsupported token pair: {} -> {}", swap_data.from_token, swap_data.to_token);
                 return;

@@ -560,27 +560,3 @@ impl NamedStep for TasmilProcessor {
         "TasmilProcessor".to_string()
     }
 }
-
-async fn insert_coin_volume_to_db(
-    conn: ArcDbPool,
-    items_to_insert: Vec<NewCoinVolume24h>,
-) -> Result<(), diesel::result::Error> {
-    use crate::db::postgres::schema::coin_volume_24h::dsl::*;
-
-    let mut conn = conn.get().await.expect("Failed to get connection");
-
-    for item in items_to_insert {
-        diesel::insert_into(coin_volume_24h)
-            .values(&item)
-            .on_conflict(coin)
-            .do_update()
-            .set((
-                buy_volume.eq(excluded(buy_volume)),
-                sell_volume.eq(excluded(sell_volume)),
-                inserted_at.eq(diesel::dsl::now),
-            ))
-            .execute(&mut conn)
-            .await?;
-    }
-    Ok(())
-}

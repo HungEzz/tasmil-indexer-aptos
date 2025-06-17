@@ -38,5 +38,4 @@ pub struct NewAptData {
     pub weth_fee_24h: Option<BigDecimal>,
 }
 
-// Prevent conflicts with other things named `AptData`
-pub type AptDataModel = AptData; 
+// Prevent conflicts with other things named `AptData` 

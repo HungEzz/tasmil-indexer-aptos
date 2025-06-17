@@ -99,9 +99,6 @@ impl Processable for VolumeCalculator {
         let mut hyperion_volumes: HashMap<String, HyperionPoolVolume> = HashMap::new();
 
         for txn in &transactions {
-            info!("--------------------------------");
-            info!("🔍 Processing {:?} ", txn);
-            info!("--------------------------------");
             // Skip transactions not within 24h
             if !is_within_24h(txn.timestamp.as_ref().unwrap().seconds) {
                 continue;

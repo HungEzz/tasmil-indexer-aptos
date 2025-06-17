@@ -268,27 +268,6 @@ pub fn run_pending_migrations<DB: diesel::backend::Backend>(conn: &mut impl Migr
         .expect("[Parser] Migrations failed!");
 }
 
-// For the normal processor build we just use standard Diesel with the postgres
-// feature enabled (which uses libpq under the hood, hence why we named the feature
-// this way).
-#[cfg(feature = "libpq")]
-pub async fn run_migrations(postgres_connection_string: String, _conn_pool: ArcDbPool) {
-    use diesel::{Connection, PgConnection};
-
-    info!("Running migrations: {:?}", postgres_connection_string);
-    let migration_time = std::time::Instant::now();
-    let mut conn =
-        PgConnection::establish(&postgres_connection_string).expect("migrations failed!");
-    run_pending_migrations(&mut conn);
-    info!(
-        duration_in_secs = migration_time.elapsed().as_secs_f64(),
-        "[Parser] Finished migrations"
-    );
-}
-
-// If the libpq feature isn't enabled, we use diesel async instead. This is used by
-// the CLI for the local testnet, where we cannot tolerate the libpq dependency.
-#[cfg(not(feature = "libpq"))]
 pub async fn run_migrations(postgres_connection_string: String, conn_pool: ArcDbPool) {
     use diesel_async::async_connection_wrapper::AsyncConnectionWrapper;
     info!("Running migrations: {:?}", postgres_connection_string);
@@ -309,6 +288,13 @@ pub async fn run_migrations(postgres_connection_string: String, conn_pool: ArcDb
     .await
     .expect("[Parser] Failed to run migrations");
 }
+
+// For the normal processor build we just use standard Diesel with the postgres
+// feature enabled (which uses libpq under the hood, hence why we named the feature
+// this way).
+
+// If the libpq feature isn't enabled, we use diesel async instead. This is used by
+// the CLI for the local testnet, where we cannot tolerate the libpq dependency.
 
 /// Section below is required to modify the query.
 impl<T: Query> Query for UpsertFilterLatestTransactionQuery<T> {
