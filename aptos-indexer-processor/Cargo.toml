@@ -1,0 +1,173 @@
+# Tasmil Aptos Multi-Protocol DEX Indexer
+# 
+# A high-performance, real-time indexer for tracking swap events and calculating
+# trading volumes across multiple DEX protocols on the Aptos blockchain.
+# 
+# Supported Protocols:
+# - Cellana: Native AMM with concentrated liquidity
+# - Thala: Multi-asset stable and volatile pools
+# - SushiSwap: Cross-chain DEX with extensive trading pairs
+# - LiquidSwap: Native Aptos DEX with multiple pool types
+# - Hyperion: V3 protocol with range orders
+# 
+# Key Features:
+# - Real-time transaction processing with sub-second latency
+# - 24-hour rolling volume calculations with automatic cleanup
+# - Time-bucketed data for chart generation (2-hour intervals, GMT+7)
+# - Protocol-specific fee tracking and aggregation
+# - High-performance PostgreSQL storage with connection pooling
+
+[package]
+name = "aptos-indexer-processor"
+version = "0.1.0"
+edition = "2021"
+authors = ["Tasmil Team <team@tasmil.io>"]
+description = "High-performance multi-protocol DEX indexer for Aptos blockchain"
+documentation = "https://github.com/your-org/tasmil-aptos-indexer/wiki"
+homepage = "https://tasmil.io"
+repository = "https://github.com/your-org/tasmil-aptos-indexer"
+license = "Apache-2.0"
+keywords = ["aptos", "defi", "dex", "indexer", "blockchain"]
+categories = ["web-programming", "database", "cryptography::cryptocurrencies"]
+readme = "README.md"
+
+[dependencies]
+# =============================================================================
+# Core Dependencies
+# =============================================================================
+
+# Error handling and result types
+anyhow = "1.0.86"
+
+# Async programming support
+async-trait = "0.1.80"
+tokio = { version = "1.37.0", features = ["full"] }
+futures = "0.3.31"
+futures-util = "0.3.21"
+
+# =============================================================================
+# Aptos Ecosystem Dependencies  
+# =============================================================================
+
+# Aptos indexer SDK for transaction processing and stream management
+aptos-indexer-processor-sdk = { git = "https://github.com/aptos-labs/aptos-indexer-processor-sdk.git", rev = "aptos-indexer-processor-sdk-v1.0.0" }
+
+# Server framework for the indexer processor
+aptos-indexer-processor-sdk-server-framework = { git = "https://github.com/aptos-labs/aptos-indexer-processor-sdk.git", rev = "aptos-indexer-processor-sdk-v1.0.0" }
+
+# Testing framework for integration tests
+aptos-indexer-testing-framework = { git = "https://github.com/aptos-labs/aptos-indexer-processor-sdk.git", rev = "aptos-indexer-processor-sdk-v1.0.0" }
+
+# =============================================================================
+# Database Layer Dependencies
+# =============================================================================
+
+# PostgreSQL ORM and query builder with async support
+# Note: postgres feature is conditionally enabled to avoid dependency conflicts
+diesel = { version = "2.1", features = [
+    "chrono",
+    "postgres_backend", 
+    "numeric",
+    "serde_json",
+] }
+
+# Async database operations with connection pooling
+# Using specific git revision for required async features
+diesel-async = { git = "https://github.com/weiznich/diesel_async.git", rev = "d02798c67065d763154d7272dd0c09b39757d0f2", features = [
+    "async-connection-wrapper",
+    "postgres",
+    "bb8",
+    "tokio",
+] }
+
+# Database migration management
+diesel_migrations = { version = "2.1.0", features = ["postgres"] }
+
+# PostgreSQL SSL/TLS support for secure connections
+native-tls = "0.2.11"
+postgres-native-tls = "0.5.0"
+tokio-postgres = "0.7.10"
+
+# =============================================================================
+# Data Processing and Serialization
+# =============================================================================
+
+# High-performance decimal arithmetic for financial calculations
+bigdecimal = "0.4.5"
+
+# Date and time handling with timezone support
+chrono = { version = "0.4.19", features = ["clock", "serde"] }
+
+# JSON serialization/deserialization with order preservation
+serde = { version = "1.0.193", features = ["derive", "rc"] }
+serde_json = { version = "1.0.81", features = ["preserve_order"] }
+
+# URL parsing and manipulation
+url = { version = "2.5.1", features = ["serde"] }
+
+# =============================================================================
+# Performance and Concurrency
+# =============================================================================
+
+# High-performance hash maps and sets
+ahash = { version = "0.8.7", features = ["serde"] }
+
+# Memory allocator optimized for server applications (Unix only)
+jemallocator = { version = "0.5.0", features = [
+    "profiling",
+    "unprefixed_malloc_on_supported_platforms",
+] }
+
+# CPU detection and parallel processing
+num_cpus = "1.16.0"
+rayon = "1.10.0"
+
+# =============================================================================
+# CLI and Configuration
+# =============================================================================
+
+# Command line argument parsing with derive macros
+clap = { version = "4.3.5", features = ["derive", "unstable-styles"] }
+
+# Enum utilities for configuration and type safety
+strum = { version = "0.24.1", features = ["derive"] }
+
+# =============================================================================
+# Utilities and Helper Libraries
+# =============================================================================
+
+# Compile-time field counting for database operations
+field_count = "0.1.1"
+
+# Structured logging with multiple output formats
+tracing = "0.1.34"
+
+# =============================================================================
+# Build Configuration
+# =============================================================================
+
+# Optimize for performance in release builds
+[profile.release]
+lto = true              # Link-time optimization for smaller, faster binaries
+codegen-units = 1       # Single codegen unit for better optimization
+panic = "abort"         # Abort on panic for smaller binary size
+strip = true            # Strip debug symbols from release builds
+
+# Development profile with faster compilation
+[profile.dev]
+opt-level = 0           # No optimization for faster compilation
+debug = true            # Include debug information
+overflow-checks = true  # Enable integer overflow checks
+
+# =============================================================================
+# Features and Optional Dependencies
+# =============================================================================
+
+[features]
+default = []
+
+# Enable additional debugging and profiling features
+debug = ["jemallocator/profiling"]
+
+# Enable performance profiling and benchmarking
+profiling = ["jemallocator/profiling"]
